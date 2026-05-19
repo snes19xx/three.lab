@@ -1,5 +1,9 @@
 # three.lab
 
+<p align="center">
+  <img src="assets/ss1.png" alt="Screenshot" width=100%>
+</p>
+
 three.lab, a three.js tool for viewing and making basic edits to 3D models and textures — all in the browser, no build step, no install.
 
 I am terrible at Blender and this is much faster for what I actually need. It started as a byproduct of my interactive React Three Fiber project [Cassini](https://github.com/snes19xx/Cassini) and I figured it was worth splitting out as its own thing.
@@ -48,3 +52,7 @@ The two tools are connected. From Lab you can send a model directly to the Cropp
 | `handoff.js`     | Passes model buffers between Lab and Cropper via IndexedDB |
 | `Cropper.html`   | Standalone plane-crop tool                                 |
 | `cropper-app.js` | Cropper geometry, UI, and export logic                     |
+
+<p align="center">
+  <img src="assets/ss2.png" alt="Screenshot" width=100%>
+</p>
