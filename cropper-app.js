@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { payloadToFile, putHandoff, takeHandoff } from "./handoff.js";
 
 //  STATE
@@ -16,6 +16,7 @@ let planeFrame = null;
 let gridHelper = null;
 let modelBoundingBox = new THREE.Box3();
 let modelSize = 1;
+let modelCenter = new THREE.Vector3();
 let history = [];
 let wireframe = false;
 let keepSide = "front"; // 'front' | 'back'
@@ -310,10 +311,11 @@ function setRotation(x, y, z) {
 
 function updatePlaneTransform() {
   if (!cutPlaneMesh) return;
+  // slider values are offsets from the model center so the plane lives on the model, not at world origin
   cutPlaneMesh.position.set(
-    +posSliders[0].value,
-    +posSliders[1].value,
-    +posSliders[2].value,
+    modelCenter.x + +posSliders[0].value,
+    modelCenter.y + +posSliders[1].value,
+    modelCenter.z + +posSliders[2].value,
   );
   cutPlaneMesh.rotation.set(
     THREE.MathUtils.degToRad(+rotSliders[0].value),
@@ -418,7 +420,9 @@ function loadFile(file, opts = {}) {
 
 function parseGLB(buffer, name, size, opts = {}) {
   const draco = new DRACOLoader();
-  draco.setDecoderPath("https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/");
+  draco.setDecoderPath(
+    "https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/",
+  );
   const loader = new GLTFLoader();
   loader.setDRACOLoader(draco); // without this, draco-compressed models hang forever at loading
   loader.parse(
@@ -447,6 +451,7 @@ function parseGLB(buffer, name, size, opts = {}) {
       emptyState.classList.add("hide");
       hideLoader();
       if (!opts.silent) toast("Loaded " + name, "accent");
+      maybeWarnAboutGeometry();
     },
     (err) => {
       console.error(err);
@@ -463,10 +468,65 @@ function computeModelBounds() {
   modelSize = Math.max(sz.x, sz.y, sz.z) || 10;
 }
 
+function maybeWarnAboutGeometry() {
+  // flag glbs that may crop unexpectedly so the user knows what's going on
+  if (!currentModel) return;
+  const reasons = [];
+  const sz = modelBoundingBox.getSize(new THREE.Vector3());
+
+  const dims = [sz.x, sz.y, sz.z].filter((d) => d > 0).sort((a, b) => a - b);
+  const aspect = dims.length === 3 ? dims[2] / dims[0] : 1;
+  if (aspect > 6) reasons.push("extreme aspect ratio");
+
+  // count meshes whose bounding boxes don't touch any other mesh those are truly separate parts
+  const meshBoxes = [];
+  currentModel.traverse((c) => {
+    if (c.isMesh && c.geometry)
+      meshBoxes.push(new THREE.Box3().setFromObject(c));
+  });
+  let isolated = 0;
+  for (let i = 0; i < meshBoxes.length; i++) {
+    let touches = false;
+    for (let j = 0; j < meshBoxes.length; j++) {
+      if (i !== j && meshBoxes[i].intersectsBox(meshBoxes[j])) {
+        touches = true;
+        break;
+      }
+    }
+    if (!touches) isolated++;
+  }
+  const isolatedRatio = meshBoxes.length ? isolated / meshBoxes.length : 0;
+  if (meshBoxes.length >= 2 && isolatedRatio >= 0.5)
+    reasons.push("scattered parts");
+
+  console.log("[cropper] geometry check", {
+    size: sz,
+    aspect: +aspect.toFixed(2),
+    meshes: meshBoxes.length,
+    isolated,
+    isolatedRatio: +isolatedRatio.toFixed(2),
+    reasons,
+  });
+
+  if (reasons.length > 0) {
+    setTimeout(
+      () =>
+        toast(
+          `Heads up: ${reasons.join(" + ")}. Cropping may behave unexpectedly.`,
+          "warn",
+        ),
+      1100,
+    );
+  }
+}
+
 function configureUIForModel(name, fileSize) {
   // Rebuild plane sized to model so it always spans across
   buildCutPlane(modelSize * 2.2);
   cutPlaneMesh.visible = true;
+
+  // anchor the cut plane to wherever the model actually lives in world space
+  modelBoundingBox.getCenter(modelCenter);
 
   // Slider ranges based on model size
   const range = modelSize * 1.2;
@@ -590,9 +650,18 @@ function setView(which) {
   animateCamera(pos, target);
 }
 
+function recalibrateCamera() {
+  // scale near/far to the model so big rockets and tiny props both get usable z-precision
+  if (!modelSize || modelSize <= 0) return;
+  camera.near = Math.max(modelSize * 0.001, 0.01);
+  camera.far = Math.max(modelSize * 100, 1000);
+  camera.updateProjectionMatrix();
+}
+
 function fitToModel() {
   if (!currentModel) return;
   computeModelBounds();
+  recalibrateCamera();
   const center = new THREE.Vector3();
   modelBoundingBox.getCenter(center);
   const dist = modelSize * 2.2;
