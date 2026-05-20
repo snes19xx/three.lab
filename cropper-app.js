@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { payloadToFile, putHandoff, takeHandoff } from "./handoff.js";
 
 //  STATE
@@ -416,7 +417,10 @@ function loadFile(file, opts = {}) {
 }
 
 function parseGLB(buffer, name, size, opts = {}) {
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/");
   const loader = new GLTFLoader();
+  loader.setDRACOLoader(draco); // without this, draco-compressed models hang forever at loading
   loader.parse(
     buffer,
     "",
