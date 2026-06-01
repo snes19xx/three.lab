@@ -931,6 +931,43 @@
           />
         </div>
 
+        <!-- SIMPLIFY -->
+        <div class="section">
+          <h4 class="section-title">Simplify</h4>
+          <div class="slider-row" style="grid-template-columns: 1fr 60px">
+            <span class="subhead-label">Reduction %</span>
+            <input
+              type="number"
+              class="num-input"
+              id="simplifyNum"
+              value="60"
+              step="1"
+              min="0"
+              max="100"
+              disabled
+            />
+          </div>
+          <input
+            type="range"
+            id="simplifySlider"
+            min="0"
+            max="100"
+            step="1"
+            value="60"
+            disabled
+            style="width: 100%; margin-top: 8px"
+          />
+          <div style="height: 12px"></div>
+          <button
+            class="btn"
+            id="btnSimplify"
+            style="width: 100%; justify-content: center"
+            disabled
+          >
+            Simplify Model
+          </button>
+        </div>
+
         <!-- CUT SIDE -->
         <div class="section">
           <h4 class="section-title">Keep side</h4>
@@ -1159,6 +1196,9 @@
         <div class="loader" id="loader">
           <div class="spinner"></div>
           <div class="loader-text" id="loaderText">Working…</div>
+          <div id="loaderProgressWrap" style="display:none; width: 120px; height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden;">
+             <div id="loaderProgressBar" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.1s;"></div>
+          </div>
         </div>
 
         <!-- ViewCube -->

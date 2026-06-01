@@ -188,6 +188,14 @@ export function loadGLB(file) {
         const size   = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
+        // Auto-recenter if model is far from origin (more than 1% of its size)
+        let recentered = false;
+        if (center.length() > maxDim * 0.01) {
+          state.currentModel.position.sub(center);
+          center.set(0, 0, 0);
+          recentered = true;
+        }
+
         state.glbInitCenter.copy(center);
         state.glbInitMaxDim = maxDim;
 
@@ -214,7 +222,9 @@ export function loadGLB(file) {
           file
         );
         document.getElementById("viewportEmpty")?.classList.add("hide");
-        if (typeof window.__labOnSubjectLoaded === "function") window.__labOnSubjectLoaded("glb");
+        if (typeof window.__labOnSubjectLoaded === "function") {
+          window.__labOnSubjectLoaded("glb", { recentered });
+        }
         showLoading(false);
       },
       (err) => {

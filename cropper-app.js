@@ -3,6 +3,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
+import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
 import { payloadToFile, putHandoff, takeHandoff } from "./handoff.js";
 
 //  STATE
@@ -38,6 +40,7 @@ const btnFlip = $("btnFlip");
 const btnReload = $("btnReload");
 const btnExport = $("btnExport");
 const btnCrop = $("btnCrop");
+const btnSimplify = $("btnSimplify");
 const btnUndo = $("btnUndo");
 const btnOpenInLab = $("btnOpenInLab");
 const btnTheme = $("btnTheme");
@@ -52,6 +55,9 @@ const tglPlane = $("tglPlane");
 const tglGrid = $("tglGrid");
 const tglWire = $("tglWire");
 const btnFit = $("btnFit");
+
+const simplifySlider = $("simplifySlider");
+const simplifyNum = $("simplifyNum");
 
 const axes = ["X", "Y", "Z"];
 const posSliders = axes.map((a) => $(`pos${a}Slider`));
@@ -268,11 +274,20 @@ function bindUI() {
 
   // Crop / Undo / Reload / Export
   btnCrop.addEventListener("click", applyCrop);
+  btnSimplify.addEventListener("click", simplifyModel);
   btnUndo.addEventListener("click", undoCrop);
   btnReload.addEventListener("click", reloadOriginal);
   btnExport.addEventListener("click", exportGLB);
   btnOpenInLab.addEventListener("click", openInLab);
   btnTheme.addEventListener("click", toggleTheme);
+
+  // Simplify slider
+  simplifySlider.addEventListener("input", () => {
+    simplifyNum.value = simplifySlider.value;
+  });
+  simplifyNum.addEventListener("input", () => {
+    simplifySlider.value = simplifyNum.value;
+  });
 
   // Viewport toolbar
   tglPlane.addEventListener("click", () => {
@@ -444,6 +459,16 @@ function parseGLB(buffer, name, size, opts = {}) {
       btnUndo.disabled = true;
 
       computeModelBounds();
+
+      // Auto-recenter if model is far from origin (more than 1% of its size)
+      const center = new THREE.Vector3();
+      modelBoundingBox.getCenter(center);
+      if (center.length() > modelSize * 0.01) {
+        currentModel.position.sub(center);
+        // Re-compute bounds after translation
+        computeModelBounds();
+      }
+
       configureUIForModel(name, size);
       fitToModel();
       cutPlaneMesh.visible = true;
@@ -528,6 +553,25 @@ function configureUIForModel(name, fileSize) {
   // anchor the cut plane to wherever the model actually lives in world space
   modelBoundingBox.getCenter(modelCenter);
 
+  // Resize grid and fog
+  const newGridSize = Math.max(200, modelSize * 3);
+  if (gridHelper) {
+    scene.remove(gridHelper);
+    gridHelper.geometry.dispose();
+    gridHelper.material.dispose();
+  }
+  gridHelper = new THREE.GridHelper(newGridSize, 40);
+  gridHelper.material.opacity = 0.85;
+  gridHelper.material.transparent = true;
+  scene.add(gridHelper);
+  applyGridTheme();
+  tglGrid.classList.toggle("active", gridHelper.visible);
+
+  if (scene.fog) {
+    scene.fog.near = Math.max(200, modelSize * 2.5);
+    scene.fog.far = Math.max(1200, modelSize * 8);
+  }
+
   // Slider ranges based on model size
   const range = modelSize * 1.2;
   posSliders.forEach((s) => {
@@ -557,7 +601,11 @@ function configureUIForModel(name, fileSize) {
     alignZ,
     btnPosReset,
     btnRotReset,
+    btnSimplify,
   ].forEach((b) => (b.disabled = false));
+
+  simplifySlider.disabled = false;
+  simplifyNum.disabled = false;
 
   updateMeta(name, fileSize);
   updateStats();
@@ -656,6 +704,11 @@ function recalibrateCamera() {
   camera.near = Math.max(modelSize * 0.001, 0.01);
   camera.far = Math.max(modelSize * 100, 1000);
   camera.updateProjectionMatrix();
+
+  if (scene.fog) {
+    scene.fog.near = Math.max(200, modelSize * 2.5);
+    scene.fog.far = Math.max(1200, modelSize * 8);
+  }
 }
 
 function fitToModel() {
@@ -700,6 +753,124 @@ function applyWireframe() {
       });
     }
   });
+}
+
+//  SIMPLIFY
+function simplifyModel() {
+  if (!currentModel) return;
+  const uiValue = parseFloat(simplifySlider.value);
+  // Map 0-100 UI range to 0.0 - 0.25 internal removal ratio
+  const removeRatio = (uiValue / 100) * 0.25;
+
+  let meshTasks = [];
+  let totalVerts = 0;
+  currentModel.traverse((child) => {
+    if (child.isMesh && child.geometry) {
+      const count = child.geometry.attributes.position.count;
+      totalVerts += count;
+      if (count >= 50) {
+        meshTasks.push({
+          mesh: child,
+          count: count,
+        });
+      }
+    }
+  });
+
+  if (meshTasks.length === 0) {
+    toast("Model is too simple to reduce further", "warn");
+    return;
+  }
+
+  // If the entire model is dominated by meshes over the limit
+  const processableTasks = meshTasks.filter((t) => t.count <= 30000);
+  if (processableTasks.length === 0 && totalVerts > 30000) {
+    toast("Model has too many vertices to simplify", "warn");
+    return;
+  }
+
+  // Snapshot for undo BEFORE start modifying meshes
+  pushHistory();
+
+  // Sort by vertex count (smallest first) 
+  meshTasks.sort((a, b) => a.count - b.count);
+
+  showLoader("Simplifying…", { showProgress: true });
+  updateLoaderProgress(0);
+
+  const modifier = new SimplifyModifier();
+  let meshCount = 0;
+  let skippedLarge = 0;
+  let errors = 0;
+  let currentIdx = 0;
+
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => processBatch();
+  const yieldToBrowser = () => channel.port2.postMessage(null);
+
+  const VERTEX_LIMIT = 30000; // Hard limit for synchronous simplification
+
+  function processBatch() {
+    const startTime = performance.now();
+    // 30ms budget per batch
+    while (
+      currentIdx < meshTasks.length &&
+      performance.now() - startTime < 30
+    ) {
+      const task = meshTasks[currentIdx];
+      const child = task.mesh;
+
+      // Skip massive meshes that would hang the browser for seconds/minutes
+      if (task.count > VERTEX_LIMIT) {
+        skippedLarge++;
+        currentIdx++;
+        continue;
+      }
+
+      try {
+        const geom = child.geometry;
+        const welded = BufferGeometryUtils.mergeVertices(geom);
+        const count = welded.attributes.position.count;
+        const removeCount = Math.floor(count * removeRatio);
+
+        // Verify count
+        if (count > 50 && removeCount > 0) {
+          const simplified = modifier.modify(welded, removeCount);
+          child.geometry.dispose();
+          child.geometry = simplified;
+          meshCount++;
+        }
+      } catch (err) {
+        console.error("Simplification error:", child.name, err);
+        errors++;
+      }
+      currentIdx++;
+    }
+
+    const pct = (currentIdx / meshTasks.length) * 100;
+    updateLoaderProgress(pct);
+    loaderText.textContent = `Simplifying (${currentIdx}/${meshTasks.length})…`;
+
+    if (currentIdx >= meshTasks.length) {
+      computeModelBounds();
+      updateStats();
+      hideLoader();
+      btnUndo.disabled = false; // Enable undo after successful simplification
+
+      const actualReduction = Math.round(removeRatio * 100);
+      let msg = `Reduced ${meshCount} meshes by ~${actualReduction}%`;
+      let type = "accent";
+      if (skippedLarge > 0 || errors > 0) {
+        msg += ` (${skippedLarge} skipped, ${errors} errors)`;
+        type = "warn";
+      }
+      toast(msg, type);
+    } else {
+      yieldToBrowser();
+    }
+  }
+
+  yieldToBrowser();
 }
 
 //  CROP
@@ -825,7 +996,7 @@ function applyCrop() {
     });
 
     if (croppedCount === 0) {
-      // pop the history we just pushed (no-op crop)
+      // pop the history
       history.pop();
       btnUndo.disabled = history.length === 0;
       hideLoader();
@@ -941,12 +1112,21 @@ function toast(msg, kind = "") {
   }, 2200);
 }
 
-function showLoader(text) {
+function showLoader(text, opts = {}) {
   loaderText.textContent = text || "Working…";
   loader.classList.add("on");
+  if (opts.showProgress) {
+    $("loaderProgressWrap").style.display = "block";
+    updateLoaderProgress(0);
+  } else {
+    $("loaderProgressWrap").style.display = "none";
+  }
 }
 function hideLoader() {
   loader.classList.remove("on");
+}
+function updateLoaderProgress(pct) {
+  $("loaderProgressBar").style.width = pct + "%";
 }
 
 //  LOOP / RESIZE
@@ -980,7 +1160,9 @@ function isDark() {
 function applySceneTheme() {
   const bg = isDark() ? 0x15140f : 0xfaf9f5;
   scene.background = new THREE.Color(bg);
-  scene.fog = new THREE.Fog(bg, 200, 1200);
+  const near = scene.fog ? scene.fog.near : 200;
+  const far = scene.fog ? scene.fog.far : 1200;
+  scene.fog = new THREE.Fog(bg, near, far);
 }
 
 function applyGridTheme() {
@@ -1020,7 +1202,7 @@ async function openInLab() {
       try {
         const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
         await putHandoff("toLab", { name: `${base}.glb`, buffer: glb });
-        location.href = "Lab.html";
+        location.href = "index.html";
       } catch (err) {
         console.error(err);
         hideLoader();

@@ -386,12 +386,16 @@ function updateStats() {
   $("statsPill").classList.add("visible");
 }
 
-window.__labOnSubjectLoaded = (kind) => {
+window.__labOnSubjectLoaded = (kind, info) => {
   const subj = $("subject-name");
   updateSubjectName(subj.textContent);
   updateStats();
   // file stats container
   $("fileStats")?.classList.remove("empty");
+
+  if (info?.recentered) {
+    toast("Model was far from origin, auto-recentered", "accent");
+  }
 };
 
 // Show viewport empty state on first load
