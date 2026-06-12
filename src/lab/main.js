@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { exportR3F, exportSVG, takeScreenshot } from "./export.js";
-import { payloadToFile, putHandoff, takeHandoff } from "./handoff.js";
+import { payloadToFile, putHandoff, takeHandoff } from "../shared/handoff.js";
 import { applyLightMode } from "./lighting.js";
 import {
   loadGLB,
@@ -295,32 +295,54 @@ $("btnExportTSX").addEventListener("click", () => exportR3F("tsx"));
 //
 //  HANDOFF: Lab to and from Cropper
 //
-const btnOpenInCropper = $("btnOpenInCropper");
-btnOpenInCropper.addEventListener("click", async (e) => {
+const btnOpenInEditor = $("btnOpenInEditor");
+btnOpenInEditor.addEventListener("click", async (e) => {
   e.preventDefault();
   if (!state.glbOriginalBuffer) {
-    toast("Load a GLB to send to Cropper", "warn");
+    toast("Load a GLB to send to Editor", "warn");
     return;
   }
   try {
-    await putHandoff("toCropper", {
+    await putHandoff("toEditor", {
       name: state.glbOriginalName,
       buffer: state.glbOriginalBuffer.slice(0),
     });
-    location.href = "Cropper.html";
+    location.href = "editor.html";
   } catch (err) {
     console.error(err);
     toast("Hand-off failed", "warn");
   }
 });
 
-// On startup: if something was sent from Cropper, load it
+// Set when an incoming model asked to be shown as a wireframe; consumed once
+// the model finishes loading (see __labOnSubjectLoaded).
+let pendingWireframe = false;
+
+function enableWireframeDefaults() {
+  state.wireframeActive = true;
+  $("btnWireframe").classList.add("active");
+  $("wireframeColor").disabled = false;
+  $("linewidth").disabled = false;
+
+  const def = wireframeDefaultColor(document.body.classList.contains("dark"));
+  $("wireframeColor").value = def;
+  $("wireframeColorHex").textContent = def;
+
+  state.currentLinewidth = 1.0;
+  $("linewidth").value = 1.0;
+  $("valLinewidth").textContent = "1.0px";
+
+  applyWireframe();
+}
+
+// On startup: if something was sent from the Editor, load it
 (async function checkIncoming() {
   try {
     const payload = await takeHandoff("toLab");
     if (payload) {
+      pendingWireframe = !!payload.wireframe;
       const file = payloadToFile(payload);
-      toast(`Loaded ${file.name} from Cropper`, "accent");
+      toast(`Loaded ${file.name} from Editor`, "accent");
       loadGLB(file);
     }
   } catch (err) {
@@ -395,6 +417,12 @@ window.__labOnSubjectLoaded = (kind, info) => {
 
   if (info?.recentered) {
     toast("Model was far from origin, auto-recentered", "accent");
+  }
+
+  // Parts harvested from the Editor arrive flagged to show as a wireframe
+  if (kind === "glb" && pendingWireframe) {
+    pendingWireframe = false;
+    enableWireframeDefaults();
   }
 };
 

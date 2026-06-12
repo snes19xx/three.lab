@@ -3,9 +3,10 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
-import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
-import { payloadToFile, putHandoff, takeHandoff } from "./handoff.js";
+import { payloadToFile, putHandoff, takeHandoff } from "../shared/handoff.js";
+import { compressGLB } from "./optimize.js";
+import { simplifyGeometry } from "./simplify.js";
+import { initTabs } from "./tabs.js";
 
 //  STATE
 
@@ -22,6 +23,22 @@ let modelCenter = new THREE.Vector3();
 let history = [];
 let wireframe = false;
 let keepSide = "front"; // 'front' | 'back'
+
+// Part selection (multi-select)
+let selection = []; // selected meshes, in click order
+let isolateOn = false;
+let selectionBoxes = []; // one BoxHelper per selected mesh
+let savedEmissive = []; // [{ mat, hex, intensity }] restored on deselect
+let partList = []; // [{ mesh, name, tris, row, checkbox, eye }]
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const SELECT_COLOR = 0xff7847;
+
+// Maximize-button glyphs (arrows out = expand, arrows in = restore)
+const PARTS_ICON_EXPAND =
+  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PARTS_ICON_RESTORE =
+  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 6h4V2M14 6h-4V2M2 10h4v4M14 10h-4v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 //  DOM
 const $ = (id) => document.getElementById(id);
@@ -58,6 +75,28 @@ const btnFit = $("btnFit");
 
 const simplifySlider = $("simplifySlider");
 const simplifyNum = $("simplifyNum");
+
+// Outliner / selection
+const outliner = $("outliner");
+const btnMaxParts = $("btnMaxParts");
+const selActions = $("selActions");
+const selName = $("selName");
+const selMeta = $("selMeta");
+const btnIsolate = $("btnIsolate");
+const btnFrameSel = $("btnFrameSel");
+const btnSimplifySel = $("btnSimplifySel");
+const btnExportSel = $("btnExportSel");
+const btnSelToLab = $("btnSelToLab");
+const btnDeleteSel = $("btnDeleteSel");
+
+// Export tab
+const btnMeasureSize = $("btnMeasureSize");
+const sizeCurrent = $("sizeCurrent");
+const textureList = $("textureList");
+const maxTexSize = $("maxTexSize");
+const segComp = $("compMode");
+const btnExportOptimized = $("btnExportOptimized");
+let compMode = "none"; // 'none' | 'draco' | 'meshopt'
 
 const axes = ["X", "Y", "Z"];
 const posSliders = axes.map((a) => $(`pos${a}Slider`));
@@ -124,6 +163,8 @@ function init() {
   bindUI();
   bindDragDrop();
   bindKeys();
+  bindPicking();
+  initTabs();
 }
 
 function buildCutPlane(size) {
@@ -312,6 +353,28 @@ function bindUI() {
     if (!b.dataset.view) return;
     b.addEventListener("click", () => setView(b.dataset.view));
   });
+
+  // Outliner / selection
+  btnMaxParts.addEventListener("click", toggleMaximizeParts);
+  btnIsolate.addEventListener("click", toggleIsolate);
+  btnFrameSel.addEventListener("click", frameSelected);
+  btnSimplifySel.addEventListener("click", simplifySelected);
+  btnExportSel.addEventListener("click", exportSelected);
+  btnSelToLab.addEventListener("click", sendSelectionToLab);
+  btnDeleteSel.addEventListener("click", deleteSelected);
+
+  // Export tab
+  btnMeasureSize.addEventListener("click", measureSize);
+  btnExportOptimized.addEventListener("click", exportOptimized);
+  segComp.querySelectorAll(".seg-opt").forEach((b) => {
+    b.addEventListener("click", () => {
+      segComp
+        .querySelectorAll(".seg-opt")
+        .forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      compMode = b.dataset.comp;
+    });
+  });
 }
 
 function setRotation(x, y, z) {
@@ -399,6 +462,11 @@ function bindKeys() {
       if (!btnExport.disabled) exportGLB();
       return;
     }
+    if (e.key === "Escape") {
+      if (document.body.classList.contains("parts-max")) toggleMaximizeParts();
+      else if (selection.length) clearSelection();
+      return;
+    }
     if (e.key === "Enter") {
       if (!btnCrop.disabled) applyCrop();
       return;
@@ -445,6 +513,7 @@ function parseGLB(buffer, name, size, opts = {}) {
     "",
     (gltf) => {
       if (currentModel) {
+        clearSelection();
         disposeObject(currentModel);
         scene.remove(currentModel);
       }
@@ -470,6 +539,7 @@ function parseGLB(buffer, name, size, opts = {}) {
       }
 
       configureUIForModel(name, size);
+      buildOutliner();
       fitToModel();
       cutPlaneMesh.visible = true;
       tglPlane.classList.add("active");
@@ -602,11 +672,15 @@ function configureUIForModel(name, fileSize) {
     btnPosReset,
     btnRotReset,
     btnSimplify,
+    btnMeasureSize,
+    btnExportOptimized,
+    maxTexSize,
   ].forEach((b) => (b.disabled = false));
 
   simplifySlider.disabled = false;
   simplifyNum.disabled = false;
 
+  buildTextureList();
   updateMeta(name, fileSize);
   updateStats();
   statsPill.style.display = "block";
@@ -755,128 +829,575 @@ function applyWireframe() {
   });
 }
 
-//  SIMPLIFY
-function simplifyModel() {
-  if (!currentModel) return;
-  const uiValue = parseFloat(simplifySlider.value);
-  // Map 0-100 UI range to 0.0 - 0.25 internal removal ratio
-  const removeRatio = (uiValue / 100) * 0.25;
+//  PART SELECTION / OUTLINER
 
-  let meshTasks = [];
-  let totalVerts = 0;
-  currentModel.traverse((child) => {
-    if (child.isMesh && child.geometry) {
-      const count = child.geometry.attributes.position.count;
-      totalVerts += count;
-      if (count >= 50) {
-        meshTasks.push({
-          mesh: child,
-          count: count,
-        });
-      }
+function bindPicking() {
+  const el = renderer.domElement;
+  let downX = 0,
+    downY = 0;
+  el.addEventListener("pointerdown", (e) => {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  el.addEventListener("pointerup", (e) => {
+    // Ignore orbit/pan drags; only treat near-stationary releases as a click
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+    if (!currentModel) return;
+    const rect = el.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster
+      .intersectObject(currentModel, true)
+      .filter((h) => h.object.isMesh && h.object.visible);
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey; // hold to add/remove
+    if (hits.length) {
+      if (additive) toggleSelection(hits[0].object);
+      else setSelection([hits[0].object]);
+    } else if (!additive) {
+      clearSelection();
     }
   });
+}
 
-  if (meshTasks.length === 0) {
-    toast("Model is too simple to reduce further", "warn");
+function meshTriCount(mesh) {
+  const g = mesh.geometry;
+  if (!g) return 0;
+  if (g.index) return g.index.count / 3;
+  const p = g.attributes.position;
+  return p ? p.count / 3 : 0;
+}
+
+function collectMeshes() {
+  const out = [];
+  if (!currentModel) return out;
+  currentModel.traverse((c) => {
+    if (c.isMesh && c.geometry) out.push(c);
+  });
+  return out;
+}
+
+function eyeSVG(open) {
+  return open
+    ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8Z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="1.9" fill="currentColor"/></svg>'
+    : '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5C1.6 5.4 1 8 1 8s2.6 4.5 7 4.5c1 0 1.9-.2 2.7-.6M6.2 3.7C6.8 3.6 7.4 3.5 8 3.5c4.4 0 7 4.5 7 4.5s-.7 1.2-1.9 2.4M2 2l12 12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+}
+
+function buildOutliner() {
+  // any geometry change invalidates the last measured export size
+  if (sizeCurrent) sizeCurrent.textContent = "—";
+  const meshes = collectMeshes();
+  partList = meshes.map((mesh, i) => ({
+    mesh,
+    name: mesh.name && mesh.name.trim() ? mesh.name : `Mesh ${i + 1}`,
+    tris: Math.round(meshTriCount(mesh)),
+  }));
+
+  outliner.innerHTML = "";
+  if (partList.length === 0) {
+    const e = document.createElement("div");
+    e.className = "outliner-empty";
+    e.textContent = "No model loaded";
+    outliner.appendChild(e);
+    hideSelActions();
     return;
   }
 
-  // If the entire model is dominated by meshes over the limit
-  const processableTasks = meshTasks.filter((t) => t.count <= 30000);
-  if (processableTasks.length === 0 && totalVerts > 30000) {
-    toast("Model has too many vertices to simplify", "warn");
+  partList.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "part-row";
+    row.dataset.idx = i;
+
+    // Checklist checkbox — multi-select without holding a modifier
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "part-check";
+    check.title = "Add to selection";
+    check.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleSelection(p.mesh);
+    });
+
+    const eye = document.createElement("button");
+    eye.className = "part-eye" + (p.mesh.visible ? "" : " off");
+    eye.innerHTML = eyeSVG(p.mesh.visible);
+    eye.title = "Toggle visibility";
+    eye.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      p.mesh.visible = !p.mesh.visible;
+      eye.className = "part-eye" + (p.mesh.visible ? "" : " off");
+      eye.innerHTML = eyeSVG(p.mesh.visible);
+      row.classList.toggle("hidden-part", !p.mesh.visible);
+    });
+
+    const name = document.createElement("div");
+    name.className = "part-name";
+    name.textContent = p.name;
+    name.title = p.name;
+
+    const tris = document.createElement("div");
+    tris.className = "part-tris";
+    tris.textContent = formatNum(p.tris);
+
+    row.appendChild(check);
+    row.appendChild(eye);
+    row.appendChild(name);
+    row.appendChild(tris);
+    row.classList.toggle("hidden-part", !p.mesh.visible);
+    // Plain click = single-select; ctrl/cmd/shift+click = add/remove
+    row.addEventListener("click", (ev) => {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey) toggleSelection(p.mesh);
+      else setSelection([p.mesh], { frame: true });
+    });
+    p.row = row;
+    p.checkbox = check;
+    p.eye = eye;
+    outliner.appendChild(row);
+  });
+
+  // Drop any selected meshes that didn't survive a rebuild, then repaint
+  selection = selection.filter((m) => partList.some((p) => p.mesh === m));
+  renderHighlights();
+  updateSelectionUI();
+}
+
+function isSelected(mesh) {
+  return selection.includes(mesh);
+}
+
+// Replace the whole selection with the given meshes
+function setSelection(meshes, opts = {}) {
+  clearHighlights();
+  selection = meshes.slice();
+  renderHighlights();
+  applyIsolationVisibility();
+  updateSelectionUI();
+  if (opts.frame) frameSelected();
+}
+
+// Add or remove a single mesh from the current selection
+function toggleSelection(mesh) {
+  clearHighlights();
+  if (isSelected(mesh)) selection = selection.filter((m) => m !== mesh);
+  else selection.push(mesh);
+  renderHighlights();
+  applyIsolationVisibility();
+  updateSelectionUI();
+}
+
+function clearSelection() {
+  clearHighlights();
+  selection = [];
+  // Don't leave the viewport blank if everything was isolated
+  if (isolateOn) showAllParts();
+  updateSelectionUI();
+}
+
+// While isolated, keep only the selected meshes visible as the selection changes
+function applyIsolationVisibility() {
+  if (!isolateOn) return;
+  partList.forEach((p) => (p.mesh.visible = isSelected(p.mesh)));
+  syncEyes();
+  updateSelectionBoxes();
+}
+
+// Expand the Parts panel to a wide, tall layout (hides the edit-tool sections)
+function toggleMaximizeParts() {
+  const max = !document.body.classList.contains("parts-max");
+  document.body.classList.toggle("parts-max", max);
+  btnMaxParts.innerHTML = max ? PARTS_ICON_RESTORE : PARTS_ICON_EXPAND;
+  btnMaxParts.dataset.tip = max ? "Restore panel" : "Expand panel";
+  // The viewport column changes width — resync the renderer after layout settles
+  requestAnimationFrame(onWindowResize);
+}
+
+// Paint emissive + outline box for every mesh in the selection
+function renderHighlights() {
+  savedEmissive = [];
+  selectionBoxes = [];
+  selection.forEach((mesh) => {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => {
+      if (m && m.emissive) {
+        savedEmissive.push({
+          mat: m,
+          hex: m.emissive.getHex(),
+          intensity: m.emissiveIntensity,
+        });
+        m.emissive.setHex(SELECT_COLOR);
+        m.emissiveIntensity = 0.45;
+      }
+    });
+    const box = new THREE.BoxHelper(mesh, SELECT_COLOR);
+    box.material.depthTest = false;
+    box.material.transparent = true;
+    scene.add(box);
+    selectionBoxes.push(box);
+  });
+}
+
+function clearHighlights() {
+  savedEmissive.forEach(({ mat, hex, intensity }) => {
+    if (mat && mat.emissive) {
+      mat.emissive.setHex(hex);
+      mat.emissiveIntensity = intensity;
+    }
+  });
+  savedEmissive = [];
+  selectionBoxes.forEach((box) => {
+    scene.remove(box);
+    box.geometry?.dispose?.();
+    box.material?.dispose?.();
+  });
+  selectionBoxes = [];
+}
+
+function updateSelectionBoxes() {
+  selectionBoxes.forEach((box) => box.update());
+}
+
+// Sync row highlight, checkboxes, and the action panel to the selection
+function updateSelectionUI() {
+  partList.forEach((p) => {
+    const on = isSelected(p.mesh);
+    p.row?.classList.toggle("active", on);
+    if (p.checkbox) p.checkbox.checked = on;
+  });
+
+  const n = selection.length;
+  if (n === 0) {
+    hideSelActions();
     return;
   }
+  selActions.style.display = "block";
 
-  // Snapshot for undo BEFORE start modifying meshes
+  let tris = 0;
+  const box = new THREE.Box3();
+  selection.forEach((mesh) => {
+    tris += meshTriCount(mesh);
+    box.expandByObject(mesh);
+  });
+  const sz = box.getSize(new THREE.Vector3());
+  const fmt = (v) => v.toFixed(1);
+
+  if (n === 1) {
+    const entry = partList.find((p) => p.mesh === selection[0]);
+    selName.textContent = entry ? entry.name : "Mesh";
+  } else {
+    selName.textContent = `${n} parts selected`;
+  }
+  selMeta.textContent = `${formatNum(Math.round(tris))} tris · ${fmt(sz.x)}×${fmt(
+    sz.y,
+  )}×${fmt(sz.z)}`;
+
+  btnExportSel.textContent = n > 1 ? `Export ${n} parts` : "Export part";
+  btnDeleteSel.textContent = n > 1 ? `Delete ${n} parts` : "Delete part";
+}
+
+function hideSelActions() {
+  selActions.style.display = "none";
+}
+
+function frameSelected() {
+  if (selection.length === 0) return;
+  const box = new THREE.Box3();
+  selection.forEach((mesh) => box.expandByObject(mesh));
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z) || modelSize;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  animateCamera(dir.multiplyScalar(radius * 2.6).add(center), center);
+}
+
+function toggleIsolate() {
+  if (selection.length === 0) return;
+  isolateOn = !isolateOn;
+  partList.forEach((p) => {
+    p.mesh.visible = isolateOn ? isSelected(p.mesh) : true;
+  });
+  syncEyes();
+  btnIsolate.classList.toggle("active", isolateOn);
+  btnIsolate.textContent = isolateOn ? "Un-isolate" : "Isolate";
+  updateSelectionBoxes();
+}
+
+function showAllParts() {
+  isolateOn = false;
+  partList.forEach((p) => (p.mesh.visible = true));
+  syncEyes();
+  btnIsolate.classList.remove("active");
+  btnIsolate.textContent = "Isolate";
+}
+
+function syncEyes() {
+  partList.forEach((p) => {
+    if (p.eye) {
+      p.eye.className = "part-eye" + (p.mesh.visible ? "" : " off");
+      p.eye.innerHTML = eyeSVG(p.mesh.visible);
+    }
+    p.row?.classList.toggle("hidden-part", !p.mesh.visible);
+  });
+}
+
+function deleteSelected() {
+  if (selection.length === 0) return;
+  const meshes = selection.slice();
+  // Restore clean materials before snapshotting so undo doesn't keep the highlight
+  clearSelection();
   pushHistory();
+  meshes.forEach((mesh) => {
+    mesh.parent?.remove(mesh);
+    mesh.geometry?.dispose?.();
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => m?.dispose?.());
+  });
+  btnUndo.disabled = false;
+  computeModelBounds();
+  buildOutliner();
+  updateStats();
+  toast(
+    meshes.length > 1 ? `Deleted ${meshes.length} parts` : "Deleted part",
+    "accent",
+  );
+}
 
-  // Sort by vertex count (smallest first) 
-  meshTasks.sort((a, b) => a.count - b.count);
+// Clone the given meshes with world transforms baked in, recentered to origin.
+function buildSelectionRoot(meshes) {
+  const root = new THREE.Group();
+  meshes.forEach((mesh) => {
+    mesh.updateWorldMatrix(true, false);
+    const clone = new THREE.Mesh(
+      mesh.geometry.clone(),
+      Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : mesh.material.clone(),
+    );
+    clone.applyMatrix4(mesh.matrixWorld);
+    clone.name = mesh.name;
+    root.add(clone);
+  });
+  root.updateMatrixWorld(true);
+  const c = new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3());
+  root.children.forEach((clone) => clone.position.sub(c));
+  return root;
+}
 
-  showLoader("Simplifying…", { showProgress: true });
-  updateLoaderProgress(0);
+// Filename-safe label for the current selection ("wheel", "3parts").
+function selectionLabel(meshes) {
+  if (meshes.length === 1) {
+    const entry = partList.find((p) => p.mesh === meshes[0]);
+    return (
+      (entry ? entry.name : "part")
+        .replace(/[^a-z0-9_-]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40) || "part"
+    );
+  }
+  return `${meshes.length}parts`;
+}
 
-  const modifier = new SimplifyModifier();
-  let meshCount = 0;
-  let skippedLarge = 0;
-  let errors = 0;
-  let currentIdx = 0;
+function exportSelected() {
+  if (selection.length === 0) return;
+  const meshes = selection.slice();
+  // Strip the highlight so it isn't baked into the cloned materials
+  clearHighlights();
+  showLoader("Exporting…");
 
-  const channel = new MessageChannel();
-  channel.port1.onmessage = () => processBatch();
-  const yieldToBrowser = () => channel.port2.postMessage(null);
+  const root = buildSelectionRoot(meshes);
+  const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
+  const label = selectionLabel(meshes);
 
-  const VERTEX_LIMIT = 30000; // Hard limit for synchronous simplification
-
-  function processBatch() {
-    const startTime = performance.now();
-    // 30ms budget per batch
-    while (
-      currentIdx < meshTasks.length &&
-      performance.now() - startTime < 30
-    ) {
-      const task = meshTasks[currentIdx];
-      const child = task.mesh;
-
-      // Skip massive meshes that would hang the browser for seconds/minutes
-      if (task.count > VERTEX_LIMIT) {
-        skippedLarge++;
-        currentIdx++;
-        continue;
-      }
-
-      try {
-        const geom = child.geometry;
-        const welded = BufferGeometryUtils.mergeVertices(geom);
-        const count = welded.attributes.position.count;
-        const removeCount = Math.floor(count * removeRatio);
-
-        // Verify count
-        if (count > 50 && removeCount > 0) {
-          const simplified = modifier.modify(welded, removeCount);
-          child.geometry.dispose();
-          child.geometry = simplified;
-          meshCount++;
-        }
-      } catch (err) {
-        console.error("Simplification error:", child.name, err);
-        errors++;
-      }
-      currentIdx++;
-    }
-
-    const pct = (currentIdx / meshTasks.length) * 100;
-    updateLoaderProgress(pct);
-    loaderText.textContent = `Simplifying (${currentIdx}/${meshTasks.length})…`;
-
-    if (currentIdx >= meshTasks.length) {
-      computeModelBounds();
-      updateStats();
+  const exporter = new GLTFExporter();
+  exporter.parse(
+    root,
+    (glb) => {
+      const blob = new Blob([glb], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${base}.${label}.glb`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      renderHighlights();
       hideLoader();
-      btnUndo.disabled = false; // Enable undo after successful simplification
+      toast("Exported " + a.download, "accent");
+    },
+    (err) => {
+      renderHighlights();
+      hideLoader();
+      console.error(err);
+      toast("Export failed", "warn");
+    },
+    { binary: true },
+  );
+}
 
-      const actualReduction = Math.round(removeRatio * 100);
-      let msg = `Reduced ${meshCount} meshes by ~${actualReduction}%`;
-      let type = "accent";
-      if (skippedLarge > 0 || errors > 0) {
-        msg += ` (${skippedLarge} skipped, ${errors} errors)`;
-        type = "warn";
+// Hand the current selection straight to the Lab, where it can be turned
+// into an SVG or an R3F component.
+function sendSelectionToLab() {
+  if (selection.length === 0) return;
+  const meshes = selection.slice();
+  clearHighlights();
+  showLoader("Sending to Lab…");
+
+  const root = buildSelectionRoot(meshes);
+  const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
+  const label = selectionLabel(meshes);
+
+  const exporter = new GLTFExporter();
+  exporter.parse(
+    root,
+    async (glb) => {
+      try {
+        // wireframe: true asks the Lab to show the harvested part as a wireframe
+        await putHandoff(
+          "toLab",
+          { name: `${base}.${label}.glb`, buffer: glb },
+          { wireframe: true },
+        );
+        location.href = "index.html";
+      } catch (err) {
+        renderHighlights();
+        hideLoader();
+        console.error(err);
+        toast("Hand-off failed", "warn");
       }
-      toast(msg, type);
-    } else {
-      yieldToBrowser();
+    },
+    (err) => {
+      renderHighlights();
+      hideLoader();
+      console.error(err);
+      toast("Send failed", "warn");
+    },
+    { binary: true },
+  );
+}
+
+// SIMPLIFY
+
+let simplifyRunning = false;
+
+function totalTris(meshes) {
+  return meshes.reduce((sum, m) => sum + meshTriCount(m), 0);
+}
+
+// Simplify each mesh in turn, yielding between them so the progress bar paints.
+async function simplifyMeshes(meshes, ratio, onProgress) {
+  let done = 0;
+  let skipped = 0;
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    try {
+      const simplified = await simplifyGeometry(mesh.geometry, ratio);
+      if (simplified) {
+        mesh.geometry.dispose();
+        mesh.geometry = simplified;
+        done++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      console.error("Simplify error:", mesh.name, err);
+      skipped++;
     }
+    onProgress?.((i + 1) / meshes.length);
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  return { done, skipped };
+}
+
+// Enable undo (or roll back a no-op snapshot) and report the real reduction.
+function finishSimplify(done, skipped, before, after, noun) {
+  if (done === 0) {
+    history.pop();
+    btnUndo.disabled = history.length === 0;
+    toast("Couldn't simplify any further", "warn");
+    return;
+  }
+  btnUndo.disabled = false;
+  const plural = done > 1 ? (noun === "mesh" ? "es" : "s") : "";
+  const pct = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+  let msg = `Reduced ${done} ${noun}${plural} — ${pct}% fewer triangles`;
+  if (skipped > 0) msg += ` (${skipped} skipped)`;
+  toast(msg, skipped > 0 ? "warn" : "accent");
+}
+
+async function simplifySelected() {
+  if (selection.length === 0 || simplifyRunning) return;
+  const ratio = parseFloat(simplifySlider.value) / 100;
+  if (ratio <= 0) {
+    toast("Set a reduction above 0%", "warn");
+    return;
+  }
+  const meshes = selection.slice();
+  simplifyRunning = true;
+  // Restore clean materials before snapshotting; buildOutliner re-highlights after
+  clearHighlights();
+  pushHistory();
+  showLoader("Simplifying…", { showProgress: true });
+
+  const before = totalTris(meshes);
+  const { done, skipped } = await simplifyMeshes(meshes, ratio, (p) => {
+    updateLoaderProgress(p * 100);
+    loaderText.textContent = `Simplifying… ${Math.round(p * 100)}%`;
+  });
+  const after = totalTris(meshes);
+
+  computeModelBounds();
+  buildOutliner();
+  updateStats();
+  hideLoader();
+  simplifyRunning = false;
+  finishSimplify(done, skipped, before, after, "part");
+}
+
+async function simplifyModel() {
+  if (!currentModel || simplifyRunning) return;
+  const ratio = parseFloat(simplifySlider.value) / 100;
+  if (ratio <= 0) {
+    toast("Set a reduction above 0%", "warn");
+    return;
+  }
+  const meshes = [];
+  currentModel.traverse((c) => {
+    if (c.isMesh && c.geometry) meshes.push(c);
+  });
+  if (meshes.length === 0) {
+    toast("Nothing to simplify", "warn");
+    return;
   }
 
-  yieldToBrowser();
+  simplifyRunning = true;
+  // Selection highlight mutates materials — drop it before snapshotting
+  clearSelection();
+  pushHistory();
+  showLoader("Simplifying…", { showProgress: true });
+
+  const before = totalTris(meshes);
+  const { done, skipped } = await simplifyMeshes(meshes, ratio, (p) => {
+    updateLoaderProgress(p * 100);
+    loaderText.textContent = `Simplifying… ${Math.round(p * 100)}%`;
+  });
+  const after = totalTris(meshes);
+
+  computeModelBounds();
+  updateStats();
+  buildOutliner();
+  hideLoader();
+  simplifyRunning = false;
+  finishSimplify(done, skipped, before, after, "mesh");
 }
 
 //  CROP
 function applyCrop() {
   if (!currentModel) return;
   const isFront = keepSide === "front";
+
+  // Drop selection highlight before snapshotting so undo restores clean materials
+  clearSelection();
 
   // Snapshot current geometry for undo
   pushHistory();
@@ -990,6 +1511,7 @@ function applyCrop() {
         if (wireframe && "wireframe" in newMat) newMat.wireframe = true;
 
         const newMesh = new THREE.Mesh(newGeom, newMat);
+        newMesh.name = child.name; // keep part identity across crops
         newRoot.add(newMesh);
         croppedCount++;
       }
@@ -1014,9 +1536,11 @@ function applyCrop() {
     scene.add(currentModel);
 
     btnUndo.disabled = false;
+    isolateOn = false;
     computeModelBounds();
     updateMeta(currentFileName, null);
     updateStats();
+    buildOutliner();
     hideLoader();
     toast(
       `Cropped · ${croppedCount} mesh${croppedCount > 1 ? "es" : ""} kept`,
@@ -1043,6 +1567,8 @@ function pushHistory() {
 
 function undoCrop() {
   if (history.length === 0) return;
+  clearSelection();
+  isolateOn = false;
   const prev = history.pop();
   scene.remove(currentModel);
   disposeObject(currentModel);
@@ -1053,6 +1579,7 @@ function undoCrop() {
   updateMeta(currentFileName, null);
   updateStats();
   applyWireframe();
+  buildOutliner();
   toast("Undid last crop");
 }
 
@@ -1071,11 +1598,13 @@ function exportGLB() {
   const exporter = new GLTFExporter();
   const wasVisible = cutPlaneMesh.visible;
   cutPlaneMesh.visible = false;
+  clearHighlights();
 
   exporter.parse(
     currentModel,
     (glb) => {
       cutPlaneMesh.visible = wasVisible;
+      renderHighlights();
       const blob = new Blob([glb], { type: "application/octet-stream" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1091,12 +1620,175 @@ function exportGLB() {
     },
     (err) => {
       cutPlaneMesh.visible = wasVisible;
+      renderHighlights();
       hideLoader();
       console.error(err);
       toast("Export failed", "warn");
     },
     { binary: true },
   );
+}
+
+// OPTIMIZE / EXPORT TAB
+
+function formatBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+// Serialize an object to a binary GLB ArrayBuffer.
+function exportToGLB(obj, opts) {
+  return new Promise((resolve, reject) => {
+    new GLTFExporter().parse(obj, resolve, reject, { binary: true, ...opts });
+  });
+}
+
+function downloadBuffer(buffer, filename) {
+  const blob = new Blob([buffer], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const TEX_SLOTS = [
+  "map",
+  "normalMap",
+  "roughnessMap",
+  "metalnessMap",
+  "emissiveMap",
+  "aoMap",
+  "alphaMap",
+  "bumpMap",
+  "displacementMap",
+  "clearcoatMap",
+  "sheenColorMap",
+  "specularMap",
+];
+
+function collectTextures() {
+  const seen = new Set();
+  const list = [];
+  if (!currentModel) return list;
+  currentModel.traverse((c) => {
+    if (!c.isMesh || !c.material) return;
+    const mats = Array.isArray(c.material) ? c.material : [c.material];
+    mats.forEach((m) => {
+      if (!m) return;
+      TEX_SLOTS.forEach((slot) => {
+        const t = m[slot];
+        if (!t || !t.image || seen.has(t)) return;
+        seen.add(t);
+        const img = t.image;
+        list.push({
+          slot,
+          w: img.width || img.naturalWidth || 0,
+          h: img.height || img.naturalHeight || 0,
+        });
+      });
+    });
+  });
+  return list;
+}
+
+function buildTextureList() {
+  const list = collectTextures();
+  textureList.innerHTML = "";
+  if (list.length === 0) {
+    const e = document.createElement("div");
+    e.className = "texture-empty";
+    e.textContent = currentModel ? "No textures" : "No model loaded";
+    textureList.appendChild(e);
+    return;
+  }
+  list.forEach((t) => {
+    const row = document.createElement("div");
+    row.className = "texture-row";
+    const name = document.createElement("span");
+    name.className = "t-name";
+    name.textContent = t.slot;
+    const dim = document.createElement("span");
+    dim.className = "t-dim";
+    dim.textContent = t.w && t.h ? `${t.w}×${t.h}` : "—";
+    row.appendChild(name);
+    row.appendChild(dim);
+    textureList.appendChild(row);
+  });
+}
+
+async function measureSize() {
+  if (!currentModel) return;
+  showLoader("Measuring…");
+  clearHighlights();
+  const wasPlane = cutPlaneMesh.visible;
+  cutPlaneMesh.visible = false;
+  try {
+    const glb = await exportToGLB(currentModel);
+    sizeCurrent.textContent = formatBytes(glb.byteLength);
+  } catch (err) {
+    console.error(err);
+    toast("Couldn't measure size", "warn");
+  } finally {
+    cutPlaneMesh.visible = wasPlane;
+    renderHighlights();
+    hideLoader();
+  }
+}
+
+async function exportOptimized() {
+  if (!currentModel) return;
+  const maxTex = parseInt(maxTexSize.value, 10) || 0;
+  if (maxTex === 0 && compMode === "none") {
+    toast("Pick a texture size or compression first", "warn");
+    return;
+  }
+
+  showLoader("Optimizing…");
+  clearHighlights();
+  const wasPlane = cutPlaneMesh.visible;
+  cutPlaneMesh.visible = false;
+  try {
+    let glb = await exportToGLB(
+      currentModel,
+      maxTex > 0 ? { maxTextureSize: maxTex } : {},
+    );
+
+    if (compMode !== "none") {
+      try {
+        glb = await compressGLB(glb, compMode);
+      } catch (err) {
+        console.error("compression failed:", err);
+        toast("Compression failed: " + (err?.message || err), "warn");
+      }
+    }
+
+    const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
+    downloadBuffer(glb, `${base}.web.glb`);
+
+    // Compare against the original file the user loaded — the comparison they
+    // actually care about ("did I end up smaller than I started?").
+    const before = originalArrayBuffer ? originalArrayBuffer.byteLength : glb.byteLength;
+    const after = glb.byteLength;
+    sizeCurrent.textContent = formatBytes(after);
+    const pct = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+    const tag = pct >= 0 ? `${pct}% smaller` : `${-pct}% larger`;
+    toast(
+      `${formatBytes(before)} → ${formatBytes(after)} · ${tag}`,
+      pct >= 0 ? "accent" : "warn",
+    );
+  } catch (err) {
+    console.error(err);
+    toast("Export failed", "warn");
+  } finally {
+    cutPlaneMesh.visible = wasPlane;
+    renderHighlights();
+    hideLoader();
+  }
 }
 
 //  TOAST / LOADER
@@ -1195,10 +1887,12 @@ async function openInLab() {
   const exporter = new GLTFExporter();
   const wasVisible = cutPlaneMesh.visible;
   cutPlaneMesh.visible = false;
+  clearHighlights();
   exporter.parse(
     currentModel,
     async (glb) => {
       cutPlaneMesh.visible = wasVisible;
+      renderHighlights();
       try {
         const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
         await putHandoff("toLab", { name: `${base}.glb`, buffer: glb });
@@ -1211,6 +1905,7 @@ async function openInLab() {
     },
     (err) => {
       cutPlaneMesh.visible = wasVisible;
+      renderHighlights();
       console.error(err);
       hideLoader();
       toast("Export failed", "warn");
@@ -1222,7 +1917,7 @@ async function openInLab() {
 // On load, check for an incoming model from Lab
 (async function checkIncoming() {
   try {
-    const payload = await takeHandoff("toCropper");
+    const payload = await takeHandoff("toEditor");
     if (payload) {
       const file = payloadToFile(payload);
       toast(`Loaded ${file.name} from Lab`, "accent");

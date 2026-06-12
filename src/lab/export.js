@@ -12,7 +12,7 @@ export function takeScreenshot() {
 }
 
 export function exportSVG() {
-  showLoading(true, "Vectorising");
+  showLoading(true, "Vectorizing");
   setTimeout(() => {
     try {
       const svgRenderer = new SVGRenderer();

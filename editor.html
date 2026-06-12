@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>three.lab — editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles/editor.css" />
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Top bar -->
+      <header class="topbar">
+        <div class="brand">
+          <span>three.lab</span>
+        </div>
+
+        <div class="file-meta" id="fileMeta">
+          <span style="color: var(--ink-3)">No model loaded</span>
+        </div>
+
+        <div class="top-actions">
+          <button class="btn ghost" id="btnReload" disabled>Reload</button>
+          <button class="btn accent" id="btnOpenInLab" disabled>
+            Open in Lab →
+          </button>
+          <button class="btn primary" id="btnExport" disabled>
+            Export GLB <span class="kbd">⌘E</span>
+          </button>
+          <button class="theme-toggle" id="btnTheme" title="Toggle theme">
+            <svg class="moon" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M13 9.3A5 5 0 0 1 6.7 3a5 5 0 1 0 6.3 6.3Z"
+                fill="currentColor"
+              />
+            </svg>
+            <svg class="sun" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="3" fill="currentColor" />
+              <g
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+                />
+              </g>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Model loader (persistent) -->
+        <div class="section">
+          <h4 class="section-title">Model</h4>
+          <div class="dropzone" id="dropzone" role="button" tabindex="0">
+            <div class="dropzone-title">Drop a .glb file</div>
+            <div class="dropzone-sub">or click to browse</div>
+          </div>
+          <input
+            type="file"
+            id="fileInput"
+            accept=".glb,.gltf"
+            style="display: none"
+          />
+        </div>
+
+        <!-- Tab bar -->
+        <div class="tabbar" id="tabbar">
+          <button class="tab active" data-tab="parts">Parts</button>
+          <button class="tab" data-tab="crop">Crop</button>
+          <button class="tab" data-tab="simplify">Simplify</button>
+          <button class="tab" data-tab="export">Export</button>
+        </div>
+
+        <!-- Parts tab -->
+        <div class="tab-panel active" id="tab-parts">
+          <div class="section" id="partsSection">
+            <div class="subhead" style="margin: 0 0 10px">
+              <span class="section-title" style="margin: 0">Parts</span>
+              <div class="subhead-actions">
+                <button
+                  class="micro-btn icon-only"
+                  id="btnMaxParts"
+                  data-tip="Expand panel"
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="outliner" id="outliner">
+              <div class="outliner-empty" id="outlinerEmpty">
+                No model loaded
+              </div>
+            </div>
+
+            <div class="sel-actions" id="selActions" style="display: none">
+              <div class="sel-name" id="selName">—</div>
+              <div class="sel-meta" id="selMeta"></div>
+              <div class="grid-2">
+                <button
+                  class="btn"
+                  id="btnIsolate"
+                  data-tip="Hide everything else"
+                >
+                  Isolate
+                </button>
+                <button class="btn" id="btnFrameSel" data-tip="Zoom to selection">
+                  Frame
+                </button>
+                <button
+                  class="btn"
+                  id="btnSimplifySel"
+                  data-tip="Reduce selected"
+                >
+                  Simplify
+                </button>
+                <button
+                  class="btn"
+                  id="btnExportSel"
+                  data-tip="Export selection as GLB"
+                >
+                  Export part
+                </button>
+              </div>
+              <button
+                class="btn accent"
+                id="btnSelToLab"
+                data-tip="Send selection to Lab for SVG / R3F export"
+                style="width: 100%; justify-content: center; margin-top: 6px"
+              >
+                Send to Lab →
+              </button>
+              <button
+                class="btn danger"
+                id="btnDeleteSel"
+                style="width: 100%; justify-content: center; margin-top: 6px"
+              >
+                Delete part
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simplify tab -->
+        <div class="tab-panel" id="tab-simplify">
+          <div class="section">
+            <h4 class="section-title">Simplify</h4>
+            <div class="slider-row" style="grid-template-columns: 1fr 60px">
+              <span class="subhead-label">Reduction %</span>
+              <input
+                type="number"
+                class="num-input"
+                id="simplifyNum"
+                value="60"
+                step="1"
+                min="0"
+                max="100"
+                disabled
+              />
+            </div>
+            <input
+              type="range"
+              id="simplifySlider"
+              min="0"
+              max="100"
+              step="1"
+              value="60"
+              disabled
+              style="width: 100%; margin-top: 8px"
+            />
+            <div style="height: 12px"></div>
+            <button
+              class="btn"
+              id="btnSimplify"
+              style="width: 100%; justify-content: center"
+              disabled
+            >
+              Simplify Model
+            </button>
+          </div>
+        </div>
+
+        <!-- Crop tab -->
+        <div class="tab-panel" id="tab-crop">
+          <div class="section">
+            <h4 class="section-title">Keep side</h4>
+            <div class="segmented" id="segSide">
+              <button class="seg-opt active" data-side="front">Front</button>
+              <button class="seg-opt" data-side="back">Back</button>
+            </div>
+            <div style="height: 8px"></div>
+            <button
+              class="btn ghost"
+              id="btnFlip"
+              style="width: 100%; justify-content: center"
+              disabled
+            >
+              ⇅ Flip side
+            </button>
+          </div>
+
+          <div class="section">
+            <div class="subhead">
+              <span class="subhead-label">Plane position</span>
+              <div class="subhead-actions">
+                <button
+                  class="micro-btn"
+                  id="btnPosReset"
+                  data-tip="Reset to origin"
+                >
+                  ⟲
+                </button>
+              </div>
+            </div>
+            <div class="slider-row">
+              <div class="axis x">X</div>
+              <input
+                type="range"
+                id="posXSlider"
+                min="-100"
+                max="100"
+                step="0.1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="posXNum"
+                value="0"
+                step="0.5"
+                disabled
+              />
+            </div>
+            <div class="slider-row">
+              <div class="axis y">Y</div>
+              <input
+                type="range"
+                id="posYSlider"
+                min="-100"
+                max="100"
+                step="0.1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="posYNum"
+                value="0"
+                step="0.5"
+                disabled
+              />
+            </div>
+            <div class="slider-row">
+              <div class="axis z">Z</div>
+              <input
+                type="range"
+                id="posZSlider"
+                min="-100"
+                max="100"
+                step="0.1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="posZNum"
+                value="0"
+                step="0.5"
+                disabled
+              />
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="subhead">
+              <span class="subhead-label">Plane rotation</span>
+              <div class="subhead-actions">
+                <button
+                  class="micro-btn"
+                  id="btnRotReset"
+                  data-tip="Reset rotation"
+                >
+                  ⟲
+                </button>
+              </div>
+            </div>
+            <div class="slider-row">
+              <div class="axis x">X</div>
+              <input
+                type="range"
+                id="rotXSlider"
+                min="-180"
+                max="180"
+                step="1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="rotXNum"
+                value="0"
+                step="1"
+                disabled
+              />
+            </div>
+            <div class="slider-row">
+              <div class="axis y">Y</div>
+              <input
+                type="range"
+                id="rotYSlider"
+                min="-180"
+                max="180"
+                step="1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="rotYNum"
+                value="0"
+                step="1"
+                disabled
+              />
+            </div>
+            <div class="slider-row">
+              <div class="axis z">Z</div>
+              <input
+                type="range"
+                id="rotZSlider"
+                min="-180"
+                max="180"
+                step="1"
+                value="0"
+                disabled
+              />
+              <input
+                type="number"
+                class="num-input"
+                id="rotZNum"
+                value="0"
+                step="1"
+                disabled
+              />
+            </div>
+
+            <div class="subhead" style="margin-top: 14px">
+              <span class="subhead-label">Align plane normal to</span>
+            </div>
+            <div class="grid-3">
+              <button class="view-btn" id="alignX" disabled>X axis</button>
+              <button class="view-btn" id="alignY" disabled>Y axis</button>
+              <button class="view-btn" id="alignZ" disabled>Z axis</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h4 class="section-title">Crop</h4>
+            <div class="stack">
+              <button class="btn primary" id="btnCrop" disabled>
+                Apply crop <span class="kbd">↵</span>
+              </button>
+              <button class="btn" id="btnUndo" disabled>
+                Undo last crop <span class="kbd">⌘Z</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export tab -->
+        <div class="tab-panel" id="tab-export">
+          <div class="section">
+            <h4 class="section-title">Estimated size</h4>
+            <div class="size-row">
+              <span id="sizeCurrent" class="size-val">—</span>
+              <button class="micro-btn" id="btnMeasureSize" disabled>
+                measure
+              </button>
+            </div>
+          </div>
+
+          <div class="section">
+            <h4 class="section-title">Textures</h4>
+            <div class="texture-list" id="textureList">
+              <div class="texture-empty">No model loaded</div>
+            </div>
+            <div
+              class="slider-row"
+              style="grid-template-columns: 1fr auto; margin-top: 12px"
+            >
+              <span class="subhead-label">Max size on export</span>
+              <select class="select" id="maxTexSize" disabled>
+                <option value="0">Original</option>
+                <option value="2048">2048</option>
+                <option value="1024">1024</option>
+                <option value="512">512</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <h4 class="section-title">Compression</h4>
+            <div class="segmented" id="compMode">
+              <button class="seg-opt active" data-comp="none">None</button>
+              <button class="seg-opt" data-comp="draco">Draco</button>
+              <button class="seg-opt" data-comp="meshopt">Meshopt</button>
+            </div>
+            <div style="height: 10px"></div>
+            <button
+              class="btn primary"
+              id="btnExportOptimized"
+              style="width: 100%; justify-content: center"
+              disabled
+            >
+              Export optimized GLB
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Viewport -->
+      <main class="viewport">
+        <div id="canvas-container"></div>
+
+        <div class="empty" id="emptyState">
+          <div class="empty-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <path
+                d="M6 12 L20 5 L34 12 L34 28 L20 35 L6 28 Z"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M6 12 L20 19 L34 12 M20 19 L20 35"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </div>
+          <div>
+            <div class="empty-title">Load a model to begin</div>
+            <div class="empty-sub" style="margin-top: 6px">
+              Drop a <strong>.glb</strong> or <strong>.gltf</strong> file
+              anywhere in this viewport, or use the panel on the left.
+            </div>
+          </div>
+        </div>
+
+        <div class="drop-overlay" id="dropOverlay">Drop to load model</div>
+
+        <div class="loader" id="loader">
+          <div class="spinner"></div>
+          <div class="loader-text" id="loaderText">Working…</div>
+          <div
+            id="loaderProgressWrap"
+            style="display: none; width: 120px; height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden;"
+          >
+            <div
+              id="loaderProgressBar"
+              style="width: 0%; height: 100%; background: var(--accent); transition: width 0.1s;"
+            ></div>
+          </div>
+        </div>
+
+        <!-- ViewCube -->
+        <div class="viewcube">
+          <button data-view="" style="visibility: hidden"></button>
+          <button data-view="top" data-tip="Top">TOP</button>
+          <button data-view="" style="visibility: hidden"></button>
+          <button data-view="left" data-tip="Left">L</button>
+          <button data-view="iso" class="center" data-tip="Isometric">
+            ISO
+          </button>
+          <button data-view="right" data-tip="Right">R</button>
+          <button data-view="back" data-tip="Back">B</button>
+          <button data-view="bottom" data-tip="Bottom">BOT</button>
+          <button data-view="front" data-tip="Front">F</button>
+        </div>
+
+        <!-- Bottom centered toolbar -->
+        <div class="vp-toolbar">
+          <button
+            class="icon-btn active"
+            id="tglPlane"
+            data-tip="Toggle cut plane (P)"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M2 4 L12 2 L12 10 L2 12 Z"
+                stroke="currentColor"
+                stroke-width="1.2"
+              />
+            </svg>
+            Plane
+          </button>
+          <button
+            class="icon-btn active"
+            id="tglGrid"
+            data-tip="Toggle grid (G)"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M2 2 H12 V12 H2 Z M2 7 H12 M7 2 V12"
+                stroke="currentColor"
+                stroke-width="1"
+              />
+            </svg>
+            Grid
+          </button>
+          <button class="icon-btn" id="tglWire" data-tip="Toggle wireframe (W)">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M2 2 L12 2 L12 12 L2 12 Z M2 2 L12 12 M12 2 L2 12"
+                stroke="currentColor"
+                stroke-width="1"
+              />
+            </svg>
+            Wire
+          </button>
+          <div class="vsep"></div>
+          <button class="icon-btn" id="btnFit" data-tip="Fit model in view (F)">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M2 5 V2 H5 M9 2 H12 V5 M12 9 V12 H9 M5 12 H2 V9"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linecap="round"
+              />
+            </svg>
+            Fit
+          </button>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-pill" id="statsPill" style="display: none">
+          <div class="row"><span>Tris</span><span id="statTris">—</span></div>
+          <div class="row"><span>Verts</span><span id="statVerts">—</span></div>
+          <div class="row">
+            <span>Meshes</span><span id="statMeshes">—</span>
+          </div>
+        </div>
+
+        <!-- Help -->
+        <div class="help-bar">
+          <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan ·
+          <kbd>scroll</kbd> zoom · <kbd>click</kbd> select ·
+          <kbd>⌘/ctrl+click</kbd> multi<br />
+          <kbd>P</kbd> plane · <kbd>G</kbd> grid · <kbd>W</kbd> wire ·
+          <kbd>F</kbd> fit
+        </div>
+
+        <div class="toast-wrap" id="toastWrap"></div>
+      </main>
+    </div>
+
+    <script type="module" src="./src/editor/main.js"></script>
+  </body>
+</html>

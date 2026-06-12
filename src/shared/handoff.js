@@ -1,8 +1,8 @@
 // Cross-app GLB handoff via IndexedDB.
-// Lab and Cropper both import this to send / receive a model.
+// Lab and Editor both import this to send / receive a model.
 //
-//   await putHandoff('toCropper', file)   // sender
-//   const f  = await takeHandoff('toCropper')  // receiver (and clears the slot)
+//   await putHandoff('toEditor', file)   // sender
+//   const f  = await takeHandoff('toEditor')  // receiver (and clears the slot)
 //
 // `file` can be a real File, or a plain { name, buffer } object (an ArrayBuffer).
 
@@ -22,7 +22,9 @@ function openDB() {
   });
 }
 
-export async function putHandoff(key, fileOrPayload) {
+// `extra` rides along in the stored record (e.g. { wireframe: true }) and is
+// returned by takeHandoff, so the receiver can react to how the model was sent.
+export async function putHandoff(key, fileOrPayload, extra = {}) {
   let name, buffer;
   if (fileOrPayload instanceof Blob) {
     name = fileOrPayload.name || "model.glb";
@@ -34,7 +36,7 @@ export async function putHandoff(key, fileOrPayload) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put({ name, buffer, ts: Date.now() }, key);
+    tx.objectStore(STORE).put({ name, buffer, ts: Date.now(), ...extra }, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

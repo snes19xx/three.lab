@@ -13,7 +13,7 @@ export const state = {
   lightModeActive: false,
   glbInitCenter: new THREE.Vector3(),
   glbInitMaxDim: 1,
-  // Stored at GLB load time so we can hand off to other apps without re-parsing
+  // Stored at GLB load time so it can hand off to other apps without re-parsing
   glbOriginalBuffer: null,
   glbOriginalName: "",
 };
