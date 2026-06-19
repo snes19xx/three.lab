@@ -30,6 +30,7 @@ import {
   resetWireframe,
   updateAllWireframeColors,
   updateAllWireframeLinewidths,
+  updateBodyColor,
 } from "./wireframe.js";
 
 const $ = (id) => document.getElementById(id);
@@ -118,17 +119,53 @@ canvasEl.addEventListener("drop", (e) => {
 });
 
 //  WIREFRAME UI
-$("btnWireframe").addEventListener("click", () => {
-  state.wireframeActive = !state.wireframeActive;
-  $("btnWireframe").classList.toggle("active", state.wireframeActive);
+function updateWireframeUI() {
+  const isTech = state.wireframeActive && state.wireframeStyle === "technical";
+  $("btnWireframe").classList.toggle("active", state.wireframeActive && state.wireframeStyle === "transparent");
+  $("btnTechnical").classList.toggle("active", isTech);
   $("wireframeColor").disabled = !state.wireframeActive;
   $("linewidth").disabled = !state.wireframeActive;
+  
+  const bodyColorRow = $("bodyColorRow");
+  if (bodyColorRow) {
+    bodyColorRow.style.display = isTech ? "flex" : "none";
+  }
+  const lblColor = $("lblWireframeColor");
+  if (lblColor) {
+    lblColor.textContent = isTech ? "Line color" : "Color";
+  }
+}
+
+$("btnWireframe").addEventListener("click", () => {
+  if (state.wireframeActive && state.wireframeStyle === "transparent") {
+    state.wireframeActive = false;
+  } else {
+    state.wireframeActive = true;
+    state.wireframeStyle = "transparent";
+  }
+  updateWireframeUI();
+  applyWireframe();
+});
+
+$("btnTechnical").addEventListener("click", () => {
+  if (state.wireframeActive && state.wireframeStyle === "technical") {
+    state.wireframeActive = false;
+  } else {
+    state.wireframeActive = true;
+    state.wireframeStyle = "technical";
+  }
+  updateWireframeUI();
   applyWireframe();
 });
 
 $("wireframeColor").addEventListener("input", (e) => {
   $("wireframeColorHex").textContent = e.target.value;
   if (state.wireframeActive) updateAllWireframeColors();
+});
+
+$("bodyColor").addEventListener("input", (e) => {
+  $("bodyColorHex").textContent = e.target.value;
+  updateBodyColor(e.target.value);
 });
 
 $("linewidth").addEventListener("input", (e) => {
@@ -320,9 +357,8 @@ let pendingWireframe = false;
 
 function enableWireframeDefaults() {
   state.wireframeActive = true;
-  $("btnWireframe").classList.add("active");
-  $("wireframeColor").disabled = false;
-  $("linewidth").disabled = false;
+  state.wireframeStyle = "transparent";
+  updateWireframeUI();
 
   const def = wireframeDefaultColor(document.body.classList.contains("dark"));
   $("wireframeColor").value = def;

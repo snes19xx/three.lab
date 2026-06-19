@@ -184,8 +184,21 @@
             <button class="toggle-btn" id="btnWireframe">
               <span class="btn-dot"></span>Wireframe
             </button>
+            <button class="toggle-btn" id="btnTechnical" style="margin-top: 8px">
+              <span class="btn-dot"></span>Technical overlay
+            </button>
+            
+            <div class="ctrl-row" id="bodyColorRow" style="margin-top: 10px; display: none;">
+              <span class="ctrl-label">Body color</span>
+              <div class="color-row" style="flex: 1">
+                <input type="color" id="bodyColor" value="#e0e0e0" />
+                <span class="color-hex" id="bodyColorHex">#e0e0e0</span>
+              </div>
+              <span></span>
+            </div>
+
             <div class="ctrl-row" style="margin-top: 10px">
-              <span class="ctrl-label">Color</span>
+              <span class="ctrl-label" id="lblWireframeColor">Color</span>
               <div class="color-row" style="flex: 1">
                 <input
                   type="color"

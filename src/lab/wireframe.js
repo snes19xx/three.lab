@@ -8,24 +8,41 @@ import { state } from "./state.js";
 // Invisible mesh so raycasting still works when wireframe is on
 const TRANSPARENT_MAT = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 
+const CLAY_MAT = new THREE.MeshStandardMaterial({
+  color: 0xe0e0e0,
+  roughness: 0.8,
+  metalness: 0.1
+});
+
 function buildWireframeLines(meshGeo, color, linewidth) {
   const edgesGeo = new THREE.EdgesGeometry(meshGeo, 10);
   const lsgeo = new LineSegmentsGeometry();
   lsgeo.setPositions(edgesGeo.attributes.position.array);
   edgesGeo.dispose();
-  const mat = new LineMaterial({ color, linewidth, resolution: lineResolution.clone(), worldUnits: false });
+  const mat = new LineMaterial({ 
+    color, 
+    linewidth, 
+    resolution: lineResolution.clone(), 
+    worldUnits: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1
+  });
   const ls2 = new LineSegments2(lsgeo, mat);
   ls2.name = "__wf__";
   return ls2;
 }
 
 function enableWireframeOnMesh(child, color, linewidth) {
-  if (child.userData.originalMaterial) return;
-  child.userData.originalMaterial = child.material;
-  child.material = TRANSPARENT_MAT;
-  const ls2 = buildWireframeLines(child.geometry, color, linewidth);
-  child.add(ls2);
-  child.userData.wireframeLines = ls2;
+  if (!child.userData.originalMaterial) {
+    child.userData.originalMaterial = child.material;
+  }
+  child.material = state.wireframeStyle === "transparent" ? TRANSPARENT_MAT : CLAY_MAT;
+  if (!child.userData.wireframeLines) {
+    const ls2 = buildWireframeLines(child.geometry, color, linewidth);
+    child.add(ls2);
+    child.userData.wireframeLines = ls2;
+  }
 }
 
 function disableWireframeOnMesh(child) {
@@ -67,6 +84,10 @@ export function applyWireframe() {
   applyWireframeToTarget(getTarget(), color, state.currentLinewidth, state.wireframeActive);
 }
 
+export function updateBodyColor(color) {
+  CLAY_MAT.color.set(color);
+}
+
 export function updateAllWireframeColors() {
   const color  = document.getElementById("wireframeColor").value;
   const target = getTarget();
@@ -82,9 +103,24 @@ export function updateAllWireframeLinewidths() {
 
 export function resetWireframe() {
   state.wireframeActive = false;
+  state.wireframeStyle = "transparent";
   document.getElementById("btnWireframe").classList.remove("active");
+  const btnTech = document.getElementById("btnTechnical");
+  if (btnTech) btnTech.classList.remove("active");
   document.getElementById("wireframeColor").disabled = true;
   document.getElementById("linewidth").disabled      = true;
+  
+  const bodyColorRow = document.getElementById("bodyColorRow");
+  if (bodyColorRow) bodyColorRow.style.display = "none";
+  const lblColor = document.getElementById("lblWireframeColor");
+  if (lblColor) lblColor.textContent = "Color";
+  
+  CLAY_MAT.color.setHex(0xe0e0e0);
+  const bodyColorInp = document.getElementById("bodyColor");
+  if (bodyColorInp) {
+    bodyColorInp.value = "#e0e0e0";
+    document.getElementById("bodyColorHex").textContent = "#e0e0e0";
+  }
 
   const teardown = (target) => {
     if (!target) return;

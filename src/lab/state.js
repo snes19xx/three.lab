@@ -9,6 +9,7 @@ export const state = {
   rotSpeed: 1.0,
   lightMode: "direct",
   wireframeActive: false,
+  wireframeStyle: "transparent",
   currentLinewidth: 1.0,
   lightModeActive: false,
   glbInitCenter: new THREE.Vector3(),

@@ -1,15 +1,49 @@
+import * as THREE from "three";
 import { SVGRenderer } from "three/addons/renderers/SVGRenderer.js";
 import { showLoading } from "./loaders.js";
-import { camera, renderer, scene } from "./scene.js";
+import { camera, renderer, scene, lineResolution } from "./scene.js";
 import { state } from "./state.js";
 
 export function takeScreenshot() {
+  const originalPixelRatio = renderer.getPixelRatio();
+  const originalSize = new THREE.Vector2();
+  renderer.getSize(originalSize);
+  const originalAspect = camera.aspect;
+
+  renderer.setPixelRatio(1);
+  renderer.setSize(3840, 2160, false);
+  camera.aspect = 3840 / 2160;
+  camera.updateProjectionMatrix();
+
+  lineResolution.set(3840, 2160);
+  scene.traverse((obj) => {
+    if (obj.isLineSegments2 && obj.material?.isLineMaterial) {
+      obj.material.resolution.copy(lineResolution);
+    }
+  });
+
   renderer.render(scene, camera);
+
   const a = document.createElement("a");
   a.download = `models-lab_${state.appMode === "glb" ? "model" : "surface"}.png`;
   a.href = renderer.domElement.toDataURL("image/png");
   a.click();
+
+  renderer.setPixelRatio(originalPixelRatio);
+  renderer.setSize(originalSize.x, originalSize.y, false);
+  camera.aspect = originalAspect;
+  camera.updateProjectionMatrix();
+
+  lineResolution.set(originalSize.x, originalSize.y);
+  scene.traverse((obj) => {
+    if (obj.isLineSegments2 && obj.material?.isLineMaterial) {
+      obj.material.resolution.copy(lineResolution);
+    }
+  });
+
+  renderer.render(scene, camera);
 }
+
 
 export function exportSVG() {
   showLoading(true, "Vectorizing");
