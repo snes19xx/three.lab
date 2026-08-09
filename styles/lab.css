@@ -94,11 +94,11 @@ body:not(.mode-glb) .mode-glb-only {
   letter-spacing: 0.01em;
   color: var(--ink);
 }
-.brand-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
+.brand-icon {
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
+  object-fit: contain;
 }
 .mode-pill {
   font-family: var(--sans);
