@@ -1,7 +1,13 @@
 import * as THREE from "three";
-import { exportR3F, exportSVG, takeScreenshot } from "./export.js";
 import { payloadToFile, putHandoff, takeHandoff } from "../shared/handoff.js";
+import {
+  initialThemeIsDark,
+  storeTheme,
+  watchSystemTheme,
+} from "../shared/theme.js";
+import { exportR3F, exportSVG, takeScreenshot } from "./export.js";
 import { applyLightMode } from "./lighting.js";
+import { initLineArt } from "./lineart.js";
 import {
   loadGLB,
   loadTexture,
@@ -36,9 +42,7 @@ import {
 const $ = (id) => document.getElementById(id);
 const toastWrap = $("toastWrap");
 
-//  THEME (dark / light)
-const THEME_KEY = "mt-theme";
-
+//  THEME (shared with the City and Editor; OS preference unless toggled)
 function wireframeDefaultColor(isDark) {
   return isDark ? "#ffffff" : "#000000";
 }
@@ -68,14 +72,18 @@ function applyTheme(isDark) {
   }
   const lbl = $("themeLabel");
   if (lbl) lbl.textContent = isDark ? "Light mode" : "Dark mode";
-  localStorage.setItem(THEME_KEY, isDark ? "dark" : "light");
 }
-const savedTheme = localStorage.getItem(THEME_KEY);
-applyTheme(savedTheme ? savedTheme === "dark" : true); // default = dark
+
+applyTheme(initialThemeIsDark());
 
 $("btnLightMode").addEventListener("click", () => {
-  applyTheme(!document.body.classList.contains("dark"));
+  const next = !document.body.classList.contains("dark");
+  applyTheme(next);
+  storeTheme(next); // only an explicit toggle pins the theme
 });
+
+// Until the user picks a side, follow the OS live.
+watchSystemTheme(applyTheme);
 
 //  FILE ROUTING
 function routeFile(file) {
@@ -121,11 +129,14 @@ canvasEl.addEventListener("drop", (e) => {
 //  WIREFRAME UI
 function updateWireframeUI() {
   const isTech = state.wireframeActive && state.wireframeStyle === "technical";
-  $("btnWireframe").classList.toggle("active", state.wireframeActive && state.wireframeStyle === "transparent");
+  $("btnWireframe").classList.toggle(
+    "active",
+    state.wireframeActive && state.wireframeStyle === "transparent",
+  );
   $("btnTechnical").classList.toggle("active", isTech);
   $("wireframeColor").disabled = !state.wireframeActive;
   $("linewidth").disabled = !state.wireframeActive;
-  
+
   const bodyColorRow = $("bodyColorRow");
   if (bodyColorRow) {
     bodyColorRow.style.display = isTech ? "flex" : "none";
@@ -326,8 +337,30 @@ $("btnScreenshot").addEventListener("click", () => {
   toast("Screenshot saved", "accent");
 });
 $("btnExportSVG").addEventListener("click", exportSVG);
+initLineArt({ onToast: toast });
 $("btnExportJSX").addEventListener("click", () => exportR3F("jsx"));
 $("btnExportTSX").addEventListener("click", () => exportR3F("tsx"));
+
+// The three export formats
+const exportMenu = $("exportMenu");
+const btnExportMenu = $("btnExportMenu");
+const setExportMenu = (open) => {
+  exportMenu.hidden = !open;
+  btnExportMenu.setAttribute("aria-expanded", open ? "true" : "false");
+};
+btnExportMenu.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setExportMenu(exportMenu.hidden);
+});
+// Any choice closes it, as does clicking off it or pressing Escape.
+exportMenu.addEventListener("click", () => setExportMenu(false));
+document.addEventListener("click", (e) => {
+  if (!exportMenu.hidden && !e.target.closest(".dock-menu"))
+    setExportMenu(false);
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !exportMenu.hidden) setExportMenu(false);
+});
 
 //
 //  HANDOFF: Lab to and from Cropper

@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles/editor.css" />
+    <link rel="stylesheet" href="./styles/nav.css" />
 
     <script type="importmap">
       {
@@ -22,11 +23,37 @@
     </script>
   </head>
   <body>
+    <script>
+      // Runs before first paint
+      // Also Mirrors src/shared/theme.js, which takes over once modules load.
+      (function () {
+        var saved = null;
+        try {
+          saved = localStorage.getItem("mt-theme");
+        } catch (e) {}
+        var dark = saved
+          ? saved === "dark"
+          : !!(
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches
+            );
+        document.body.classList.toggle("dark", dark);
+      })();
+    </script>
     <div class="app">
       <!-- Top bar -->
       <header class="topbar">
-        <div class="brand">
-          <span>three.lab</span>
+        <div class="topbar-left">
+          <div class="brand">
+            <span>three.lab</span>
+          </div>
+
+          <!-- Primary navigation across the three tools -->
+          <nav class="tool-nav">
+            <a class="tool-nav-item" href="./index.html">City</a>
+            <a class="tool-nav-item" href="./lab.html">Lab</a>
+            <span class="tool-nav-item active">Editor</span>
+          </nav>
         </div>
 
         <div class="file-meta" id="fileMeta">
@@ -66,7 +93,7 @@
 
       <!-- Sidebar -->
       <aside class="sidebar">
-        <!-- Model loader (persistent) -->
+        <!-- Model loader -->
         <div class="section">
           <h4 class="section-title">Model</h4>
           <div class="dropzone" id="dropzone" role="button" tabindex="0">
@@ -129,7 +156,11 @@
                 >
                   Isolate
                 </button>
-                <button class="btn" id="btnFrameSel" data-tip="Zoom to selection">
+                <button
+                  class="btn"
+                  id="btnFrameSel"
+                  data-tip="Zoom to selection"
+                >
                   Frame
                 </button>
                 <button
@@ -484,11 +515,24 @@
           <div class="loader-text" id="loaderText">Working…</div>
           <div
             id="loaderProgressWrap"
-            style="display: none; width: 120px; height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden;"
+            style="
+              display: none;
+              width: 120px;
+              height: 4px;
+              background: var(--line);
+              border-radius: 2px;
+              margin-top: 8px;
+              overflow: hidden;
+            "
           >
             <div
               id="loaderProgressBar"
-              style="width: 0%; height: 100%; background: var(--accent); transition: width 0.1s;"
+              style="
+                width: 0%;
+                height: 100%;
+                background: var(--accent);
+                transition: width 0.1s;
+              "
             ></div>
           </div>
         </div>
@@ -573,9 +617,8 @@
 
         <!-- Help -->
         <div class="help-bar">
-          <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan ·
-          <kbd>scroll</kbd> zoom · <kbd>click</kbd> select ·
-          <kbd>⌘/ctrl+click</kbd> multi<br />
+          <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan · <kbd>scroll</kbd> zoom ·
+          <kbd>click</kbd> select · <kbd>⌘/ctrl+click</kbd> multi<br />
           <kbd>P</kbd> plane · <kbd>G</kbd> grid · <kbd>W</kbd> wire ·
           <kbd>F</kbd> fit
         </div>

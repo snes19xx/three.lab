@@ -3,21 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>three.lab by snes</title>
+    <title>three.lab · City</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <link
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
       rel="stylesheet"
     />
-    <link
 
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
     <link rel="stylesheet" href="./styles/lab.css" />
+    <link rel="stylesheet" href="./styles/nav.css" />
+    <link rel="stylesheet" href="./styles/city.css" />
 
     <script type="importmap">
       {
@@ -27,25 +28,46 @@
         }
       }
     </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   </head>
 
-  <body class="mode-texture">
+  <body>
+    <script>
+      // Runs before first paint so the page never flashes the wrong theme.
+      // Mirrors src/shared/theme.js, which takes over once modules load.
+      (function () {
+        var saved = null;
+        try {
+          saved = localStorage.getItem("mt-theme");
+        } catch (e) {}
+        var dark = saved
+          ? saved === "dark"
+          : !!(
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches
+            );
+        document.body.classList.toggle("dark", dark);
+      })();
+    </script>
     <!-- TOP BAR -->
     <header id="top-bar">
       <div class="brand">
         <span class="brand-dot"></span>
         <span>three.Lab</span>
       </div>
-      <span class="mode-pill"></span>
+
+      <!-- Primary navigation across the three tools -->
+      <nav class="tool-nav">
+        <span class="tool-nav-item active">City</span>
+        <a class="tool-nav-item" href="./lab.html">Lab</a>
+        <a class="tool-nav-item" href="./editor.html">Editor</a>
+      </nav>
+
       <span class="bar-sep"></span>
-      <span id="subject-name" class="placeholder">No subject loaded</span>
-      <span id="cursor-coords" class="mode-texture-only"
-        >— lat &nbsp; — lon</span
-      >
+      <span id="subject-name" class="placeholder">No area selected</span>
+
       <div class="top-actions">
-        <a class="btn accent mode-glb-only" id="btnOpenInEditor" href="#">
-          Open in Editor →
-        </a>
+        <span id="cursor-coords">— lat &nbsp; — lon</span>
         <button class="btn" id="btnLightMode">
           <span class="theme-glyph"></span>
           <span id="themeLabel">Light mode</span>
@@ -55,387 +77,144 @@
 
     <!-- SIDE PANEL -->
     <aside id="panel">
-      <!-- Page nav -->
-      <div class="top-pagination">
-        <button class="page-btn" id="prevBtnTop" disabled>← Prev</button>
-        <span class="page-indicator" id="pageIndicatorTop">01 / 03</span>
-        <button class="page-btn" id="nextBtnTop">Next →</button>
-      </div>
-
       <div class="panel-inner">
-        <!-- Page 1 — Source -->
-        <div class="page active" id="page-1">
-          <div class="section">
-            <div class="section-title">
-              Source
-              <span class="hint">01</span>
-            </div>
-            <span class="file-input-label">Primary</span>
-            <div class="file-drop-zone" id="primaryZone">
-              <input
-                type="file"
-                id="primaryInput"
-                accept="image/jpeg,image/png,image/webp,.ktx2,.glb,.gltf"
-              />
-              <div class="drop-text" id="primaryDropText">
-                <span class="drop-headline">Drop or click</span>
-                <span class="drop-meta">JPG · PNG · WEBP · KTX2 · GLB</span>
-              </div>
-            </div>
-
-            <div class="normal-wrap mode-texture-only" id="normalUploadWrap">
-              <span class="file-input-label">Normal map (optional)</span>
-              <div class="file-drop-zone" id="normalZone">
-                <input
-                  type="file"
-                  id="normalInput"
-                  accept="image/jpeg,image/png,image/webp"
-                />
-                <div class="drop-text" id="normalDropText">
-                  <span class="drop-headline">Drop or click</span>
-                  <span class="drop-meta">JPG · PNG</span>
-                </div>
-              </div>
-            </div>
-
-            <div id="fileStats" class="empty"></div>
+        <!-- SEARCH -->
+        <div class="section">
+          <div class="section-title">
+            Place
+            <span class="hint">osm / nominatim</span>
           </div>
-
-          <div class="section">
-            <div class="section-title">Rotation</div>
-            <button class="toggle-btn" id="btnAutoRotate">
-              <span class="btn-dot"></span>Auto-rotate
-            </button>
-            <div class="ctrl-sep"></div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Speed</span>
-              <input
-                type="range"
-                id="rotSpeed"
-                min="0.1"
-                max="5"
-                step="0.1"
-                value="1"
-              />
-              <span class="ctrl-val" id="valRotSpeed">1.0×</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Axial tilt</span>
-              <input
-                type="range"
-                id="axialTilt"
-                min="-90"
-                max="90"
-                step="1"
-                value="0"
-              />
-              <span class="ctrl-val" id="valAxialTilt">0°</span>
-            </div>
+          <div class="search-wrap">
+            <input
+              type="text"
+              id="searchInput"
+              class="text-input"
+              placeholder="Vancouver, Victoria Harbour…"
+              autocomplete="off"
+            />
+            <button class="btn" id="btnSearch">Go</button>
           </div>
+          <ul class="search-results" id="searchResults"></ul>
         </div>
 
-        <!-- Page 2 — Display -->
-        <div class="page" id="page-2">
-          <div class="section mode-texture-only">
-            <div class="section-title">
-              Material
-              <span class="hint">02</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Roughness</span>
-              <input
-                type="range"
-                id="roughness"
-                min="0"
-                max="1"
-                step="0.01"
-                value="0.8"
-              />
-              <span class="ctrl-val" id="valRoughness">0.80</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Metalness</span>
-              <input
-                type="range"
-                id="metalness"
-                min="0"
-                max="1"
-                step="0.01"
-                value="0"
-              />
-              <span class="ctrl-val" id="valMetalness">0.00</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Normal scale</span>
-              <input
-                type="range"
-                id="normalScale"
-                min="0"
-                max="3"
-                step="0.05"
-                value="1"
-              />
-              <span class="ctrl-val" id="valNormalScale">1.00</span>
-            </div>
+        <!-- EXTENT -->
+        <div class="section">
+          <div class="section-title">
+            Extent
+            <span class="hint">centred on map</span>
           </div>
-
-          <div class="section">
-            <div class="section-title">Wireframe</div>
-            <button class="toggle-btn" id="btnWireframe">
-              <span class="btn-dot"></span>Wireframe
-            </button>
-            <button class="toggle-btn" id="btnTechnical" style="margin-top: 8px">
-              <span class="btn-dot"></span>Technical overlay
-            </button>
-            
-            <div class="ctrl-row" id="bodyColorRow" style="margin-top: 10px; display: none;">
-              <span class="ctrl-label">Body color</span>
-              <div class="color-row" style="flex: 1">
-                <input type="color" id="bodyColor" value="#e0e0e0" />
-                <span class="color-hex" id="bodyColorHex">#e0e0e0</span>
-              </div>
-              <span></span>
-            </div>
-
-            <div class="ctrl-row" style="margin-top: 10px">
-              <span class="ctrl-label" id="lblWireframeColor">Color</span>
-              <div class="color-row" style="flex: 1">
-                <input
-                  type="color"
-                  id="wireframeColor"
-                  value="#000000"
-                  disabled
-                />
-                <span class="color-hex" id="wireframeColorHex">#000000</span>
-              </div>
-              <span></span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Line width</span>
-              <input
-                type="range"
-                id="linewidth"
-                min="0.5"
-                max="5"
-                step="0.5"
-                value="1"
-                disabled
-              />
-              <span class="ctrl-val" id="valLinewidth">1.0px</span>
-            </div>
+          <div class="ctrl-row">
+            <span class="ctrl-label">Size</span>
+            <input
+              type="range"
+              id="extentSize"
+              min="200"
+              max="4000"
+              step="50"
+              value="800"
+            />
+            <span class="ctrl-val" id="valExtentSize">800m</span>
           </div>
-
-          <div class="section">
-            <div class="section-title">Lighting</div>
-            <div class="radio-group">
-              <button class="radio-btn active" id="lightDirect">Direct</button>
-              <button class="radio-btn" id="lightAmbient">Ambient</button>
-              <button class="radio-btn" id="lightCustom">Custom</button>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Azimuth</span>
-              <input
-                type="range"
-                id="lightAzimuth"
-                min="0"
-                max="360"
-                step="1"
-                value="45"
-              />
-              <span class="ctrl-val" id="valLightAzimuth">45°</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Elevation</span>
-              <input
-                type="range"
-                id="lightElevation"
-                min="-90"
-                max="90"
-                step="1"
-                value="45"
-              />
-              <span class="ctrl-val" id="valLightElevation">45°</span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Intensity</span>
-              <input
-                type="range"
-                id="lightIntensity"
-                min="0"
-                max="6"
-                step="0.1"
-                value="2.5"
-              />
-              <span class="ctrl-val" id="valLightIntensity">2.5</span>
-            </div>
+          <div class="ctrl-row">
+            <span class="ctrl-label">Height ×</span>
+            <input
+              type="range"
+              id="heightScale"
+              min="0.25"
+              max="4"
+              step="0.05"
+              value="1"
+            />
+            <span class="ctrl-val" id="valHeightScale">1.00</span>
           </div>
+          <div class="ctrl-row">
+            <span class="ctrl-label">Min footprint</span>
+            <input
+              type="range"
+              id="minArea"
+              min="0"
+              max="500"
+              step="10"
+              value="0"
+            />
+            <span class="ctrl-val" id="valMinArea">off</span>
+          </div>
+          <div class="extent-readout" id="extentReadout">— km² · —</div>
         </div>
 
-        <!-- Page 3 — Environment -->
-        <div class="page" id="page-3">
-          <div class="section mode-texture-only">
-            <div class="section-title">
-              Atmosphere
-              <span class="hint">03</span>
-            </div>
-            <button class="toggle-btn" id="btnAtmosphere">
-              <span class="btn-dot"></span>Glow
-            </button>
-            <div class="ctrl-row" style="margin-top: 12px">
-              <span class="ctrl-label">Color</span>
-              <div class="color-row" style="flex: 1">
-                <input type="color" id="atmosphereColor" value="#4488ff" />
-                <span class="color-hex" id="atmosphereColorHex">#4488ff</span>
-              </div>
-              <span></span>
-            </div>
-            <div class="ctrl-row">
-              <span class="ctrl-label">Intensity</span>
-              <input
-                type="range"
-                id="atmosphereIntensity"
-                min="0.1"
-                max="2.5"
-                step="0.05"
-                value="0.9"
-              />
-              <span class="ctrl-val" id="valAtmosIntensity">0.90</span>
-            </div>
-            <div class="ctrl-sep"></div>
-            <button class="toggle-btn" id="btnGraticule">
-              <span class="btn-dot"></span>Graticule grid
-            </button>
-            <button class="toggle-btn" id="btnPoles">
-              <span class="btn-dot"></span>Pole markers
-            </button>
+        <!-- LAYERS -->
+        <div class="section">
+          <div class="section-title">
+            Layers
+            <span class="hint">what to fetch</span>
           </div>
-
-          <div class="section mode-glb-only">
-            <div class="section-title">
-              Environment
-              <span class="hint">03</span>
-            </div>
-            <div
-              style="
-                font-family: var(--serif);
-                font-style: italic;
-                font-size: 16px;
-                color: var(--ink-3);
-                text-align: center;
-                padding: 30px 10px;
-                line-height: 1.5;
-              "
-            >
-              Environment options are reserved for texture mode.<br />
-              Load an image to access atmosphere and grid overlays.
-            </div>
-          </div>
+          <div id="layerList"></div>
+          <div class="ctrl-sep"></div>
+          <label class="check-row">
+            <input type="checkbox" id="optGround" checked />
+            <span>Ground plane</span>
+          </label>
         </div>
+
+        <div id="buildStats" class="empty"></div>
       </div>
 
-      <div class="panel-footer">
-        <button class="btn" id="btnScreenshot">Save screenshot</button>
-        <button class="btn mode-glb-only" id="btnExportSVG">
-          Export vector (SVG)
-        </button>
-        <button class="btn mode-glb-only" id="btnExportJSX">
-          Export JSX (R3F)
-        </button>
-        <button class="btn mode-glb-only" id="btnExportTSX">
-          Export TSX (R3F)
-        </button>
-        <button class="btn" id="btnReset">Reset settings</button>
+      <!-- ACTION DOCK -->
+      <div class="panel-footer action-dock">
+        <div class="dock-progress" id="progressWrap">
+          <div class="progress-bar"><span id="progressFill"></span></div>
+          <div class="progress-label" id="progressLabel">Working…</div>
+        </div>
+        <div class="dock-buttons">
+          <button class="btn" id="btnEstimate">Estimate</button>
+          <button class="btn accent dock-primary" id="btnBuild">
+            Build city
+          </button>
+          <button class="btn danger dock-primary" id="btnCancel" hidden>
+            Cancel
+          </button>
+        </div>
+        <span class="footer-note">
+          Data © OpenStreetMap contributors, ODbL.
+        </span>
       </div>
     </aside>
 
-    <!-- CANVAS / VIEWPORT -->
-    <div id="canvas-container">
-      <div class="viewport-empty hide" id="viewportEmpty">
-        <div class="empty-icon">
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle
-              cx="18"
-              cy="18"
-              r="11"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-            <path
-              d="M7 18a11 9 0 0 0 22 0M7 18a11 9 0 0 1 22 0M18 7v22"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-          </svg>
-        </div>
-        <div class="empty-title">Drop a subject to begin</div>
-        <div class="empty-sub">
-          Drag a .GLB for full models, or a .JPG / .PNG / .WEBP / .KTX2<br />
-          to wrap onto a sphere with material controls.
-        </div>
-        <div class="try-it">
-          <span class="try-it-label">or try one</span>
-          <div class="try-it-row">
-            <button class="try-btn" id="tryTexture" type="button">
-              <span class="try-btn-kind">Texture</span>
-              <span class="try-btn-name">Jupiter</span>
-            </button>
-            <button class="try-btn" id="tryGLB" type="button">
-              <span class="try-btn-kind">Model</span>
-              <span class="try-btn-name">NYC</span>
-            </button>
-          </div>
+    <!-- MAP -->
+    <div id="map"></div>
+    <div class="map-crosshair" id="mapCrosshair"></div>
+
+    <!-- WORKING OVERLAY -->
+    <div class="work-overlay" id="workOverlay" hidden>
+      <div class="work-card">
+        <div class="work-phase" id="workPhase">Working</div>
+        <div class="work-detail" id="workDetail">—</div>
+        <div class="work-bar" id="workBarWrap"><span id="workFill"></span></div>
+        <div class="work-meta">
+          <span id="workElapsed">0s</span>
+          <button class="btn danger" id="btnCancelOverlay">Cancel</button>
         </div>
       </div>
+    </div>
 
-      <div id="loading-overlay">
-        <div class="loading-card">
-          <div class="loading-spinner"></div>
-          <span class="loading-text">Loading</span>
+    <!-- RESULT CARD -->
+    <div class="result-card" id="resultCard" hidden>
+      <button class="result-close" id="btnResultClose" title="Dismiss">
+        ×
+      </button>
+      <div class="result-title" id="resultTitle">City built</div>
+      <div class="result-grid" id="resultGrid"></div>
+      <div class="result-actions">
+        <button class="btn accent wide" id="btnToLab">Open in Lab →</button>
+        <div class="result-row">
+          <button class="btn" id="btnToEditor">Editor →</button>
+          <button class="btn" id="btnDownload">Download .glb</button>
         </div>
-      </div>
-
-      <div class="stats-pill" id="statsPill">
-        <div class="row"><span>Tris</span><span id="statTris">—</span></div>
-        <div class="row"><span>Verts</span><span id="statVerts">—</span></div>
-        <div class="row"><span>Meshes</span><span id="statMeshes">—</span></div>
-      </div>
-
-      <div class="help-bar">
-        <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan · <kbd>scroll</kbd> zoom
       </div>
     </div>
 
     <div class="toast-wrap" id="toastWrap"></div>
 
-
-    <script>
-      //Paged UI handler 
-      let currentPage = 1;
-      const totalPages = 3;
-      function changePage(direction) {
-        document
-          .getElementById("page-" + currentPage)
-          .classList.remove("active");
-        currentPage = Math.max(
-          1,
-          Math.min(totalPages, currentPage + direction),
-        );
-        document.getElementById("page-" + currentPage).classList.add("active");
-        const pad = (n) => String(n).padStart(2, "0");
-        document.getElementById("pageIndicatorTop").innerText =
-          pad(currentPage) + " / " + pad(totalPages);
-        document.getElementById("prevBtnTop").disabled = currentPage === 1;
-        document.getElementById("nextBtnTop").disabled =
-          currentPage === totalPages;
-      }
-      document
-        .getElementById("prevBtnTop")
-        .addEventListener("click", () => changePage(-1));
-      document
-        .getElementById("nextBtnTop")
-        .addEventListener("click", () => changePage(1));
-    </script>
-
-    <script type="module" src="./src/lab/main.js"></script>
+    <script type="module" src="./src/city/main.js"></script>
   </body>
 </html>

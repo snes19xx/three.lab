@@ -1,13 +1,19 @@
 import * as THREE from "three";
+import {
+  creditColourFor,
+  creditComment,
+  creditSVGMarkup,
+  drawCreditOnCanvas,
+} from "../shared/attribution.js";
 import { showLoading } from "./loaders.js";
 import {
+  ambientLight,
   camera,
+  dirLight,
+  lineResolution,
   renderer,
   scene,
-  lineResolution,
   sphere,
-  ambientLight,
-  dirLight,
 } from "./scene.js";
 import { state } from "./state.js";
 
@@ -31,9 +37,18 @@ export function takeScreenshot() {
 
   renderer.render(scene, camera);
 
+  // The WebGL canvas cannot be drawn on, so the frame is copied into a 2D
+  // canvas and the credit goes on top of that.
+  const composed = document.createElement("canvas");
+  composed.width = 3840;
+  composed.height = 2160;
+  const ctx = composed.getContext("2d");
+  ctx.drawImage(renderer.domElement, 0, 0, composed.width, composed.height);
+  drawCreditOnCanvas(ctx, composed.width, composed.height);
+
   const a = document.createElement("a");
   a.download = `models-lab_${state.appMode === "glb" ? "model" : "surface"}.png`;
-  a.href = renderer.domElement.toDataURL("image/png");
+  a.href = composed.toDataURL("image/png");
   a.click();
 
   renderer.setPixelRatio(originalPixelRatio);
@@ -50,7 +65,6 @@ export function takeScreenshot() {
 
   renderer.render(scene, camera);
 }
-
 
 function svgClamp01(x) {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -270,7 +284,11 @@ function buildSVGMarkup() {
       ? scene.background.getStyle()
       : "rgb(10,10,10)";
 
-  return `<svg viewBox="0 0 ${f(width)} ${f(height)}" width="${f(width)}" height="${f(height)}" style="background-color: ${bg};" xmlns="http://www.w3.org/2000/svg" version="1.1">${fillMarkup}${edgeMarkup}</svg>`;
+  const credit = creditSVGMarkup(width, height, {
+    fill: creditColourFor(bg) === "rgba(0,0,0,0.55)" ? "#333333" : "#dddddd",
+  });
+
+  return `<svg viewBox="0 0 ${f(width)} ${f(height)}" width="${f(width)}" height="${f(height)}" style="background-color: ${bg};" xmlns="http://www.w3.org/2000/svg" version="1.1">${fillMarkup}${edgeMarkup}${credit}</svg>`;
 }
 
 export function exportSVG() {
@@ -362,8 +380,11 @@ function buildR3FCode(gltfScene, modelFilename, format) {
   const nodeList = [...meshNodes.values()];
   const matList = [...matNames.values()];
 
+  const credit = creditComment();
+
   if (isTsx) {
-    return `import * as THREE from 'three'
+    return `${credit}
+import * as THREE from 'three'
 import { useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { GLTF } from 'three-stdlib'
@@ -390,7 +411,8 @@ useGLTF.preload('/model.glb')
 `;
   }
 
-  return `import { useRef } from 'react'
+  return `${credit}
+import { useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 
 // Update '/model.glb' to match your file path in /public

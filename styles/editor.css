@@ -11,8 +11,7 @@
   --accent-soft: #e8ecdd;
   --accent-ink: #324522;
   --danger: #9a3b2a;
-  --shadow-sm:
-    0 1px 0 rgba(31, 30, 29, 0.04), 0 1px 2px rgba(31, 30, 29, 0.04);
+  --shadow-sm: 0 1px 0 rgba(31, 30, 29, 0.04), 0 1px 2px rgba(31, 30, 29, 0.04);
   --shadow-md:
     0 1px 0 rgba(31, 30, 29, 0.04), 0 8px 24px -8px rgba(31, 30, 29, 0.12);
   --radius: 10px;
@@ -32,8 +31,7 @@ body.dark {
   --accent-soft: #2a2f1f;
   --accent-ink: #84b759;
   --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md:
-    0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 30px -8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 30px -8px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 body.dark .btn.primary {
@@ -713,8 +711,7 @@ input[type="range"]:hover::-webkit-slider-thumb {
   display: block;
 }
 
-/* Maximized parts panel: widen the sidebar, hide everything else,
-   let the list fill the height */
+/* Maximized parts panel */
 body.parts-max .app {
   grid-template-columns: 540px 1fr;
 }
@@ -962,7 +959,7 @@ body.parts-max #partsSection .outliner {
   transition: all 0.1s;
   position: relative;
 }
-/* Suppress generic tooltip on viewcube — labels are already visible */
+/* Suppress generic tooltip on viewcube -- labels are already visible */
 .viewcube button[data-tip]:hover::after {
   display: none;
 }

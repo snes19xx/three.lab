@@ -7,7 +7,9 @@ export function initTabs() {
     tab.addEventListener("click", () => {
       const name = tab.dataset.tab;
       tabs.forEach((t) => t.classList.toggle("active", t === tab));
-      panels.forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+      panels.forEach((p) =>
+        p.classList.toggle("active", p.id === "tab-" + name),
+      );
     });
   });
 }

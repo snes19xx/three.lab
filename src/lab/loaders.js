@@ -20,6 +20,15 @@ export function setMode(m) {
   state.appMode = m;
   document.body.classList.remove("mode-texture", "mode-glb");
   document.body.classList.add("mode-" + m);
+  // The export dock only exists in GLB mode; leaving it open would have it
+  // reappear already unfolded the next time a model loads.
+  const menu = document.getElementById("exportMenu");
+  if (menu && !menu.hidden) {
+    menu.hidden = true;
+    document
+      .getElementById("btnExportMenu")
+      ?.setAttribute("aria-expanded", "false");
+  }
 }
 
 export function disposeObject3D(obj) {

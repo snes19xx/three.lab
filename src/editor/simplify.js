@@ -1,7 +1,7 @@
 // Mesh simplification backed by meshoptimizer's quadric simplifier.
 // It collapses edges on the index buffer while leaving vertex attributes
 // (UVs, normals) intact on the survivors, so textures hold up far better than
-// three's SimplifyModifier — and it's wasm-fast on large meshes.
+// three's SimplifyModifier and it's wasm-fast on large meshes.
 
 import * as THREE from "three";
 import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
@@ -21,8 +21,7 @@ function getSimplifier() {
   return simplifierPromise;
 }
 
-// Keep only the vertices the new index buffer still references, carrying every
-// attribute along, then reindex. Keeps vertex counts and file size honest.
+// Keep only the vertices the new index buffer still references
 function compact(geom, dstIndices) {
   const remap = new Map();
   const order = [];
@@ -42,9 +41,13 @@ function compact(geom, dstIndices) {
     const dst = new Arr(order.length * size);
     for (let n = 0; n < order.length; n++) {
       const o = order[n];
-      for (let c = 0; c < size; c++) dst[n * size + c] = src.array[o * size + c];
+      for (let c = 0; c < size; c++)
+        dst[n * size + c] = src.array[o * size + c];
     }
-    out.setAttribute(name, new THREE.BufferAttribute(dst, size, src.normalized));
+    out.setAttribute(
+      name,
+      new THREE.BufferAttribute(dst, size, src.normalized),
+    );
   }
 
   const index = new Uint32Array(dstIndices.length);
@@ -55,15 +58,12 @@ function compact(geom, dstIndices) {
   return out;
 }
 
-// Reduce a geometry's triangle count. `ratio` is the fraction of triangles to
-// remove (0..1). Returns a new indexed BufferGeometry, or null if no
-// meaningful reduction was possible.
+// Reduce a geometry's triangle count.
 export async function simplifyGeometry(geometry, ratio) {
   if (!geometry?.attributes?.position) return null;
   const simplifier = await getSimplifier();
 
-  // Weld first: an indexed, non-interleaved, de-duplicated mesh. mergeVertices
-  // hashes all attributes, so it won't fuse across UV/normal seams.
+  // Weld first:
   const geom = BufferGeometryUtils.mergeVertices(geometry);
   if (!geom.index) return null;
 
@@ -81,9 +81,14 @@ export async function simplifyGeometry(geometry, ratio) {
   target = Math.max(3, target);
   if (target >= indexCount) return null;
 
-  // A high error budget lets the requested ratio drive the result instead of
-  // an error threshold, so the "Reduction %" slider stays honest.
-  const [dstIndices] = simplifier.simplify(indices, positions, 3, target, 1.0, []);
+  const [dstIndices] = simplifier.simplify(
+    indices,
+    positions,
+    3,
+    target,
+    1.0,
+    [],
+  );
   if (!dstIndices || dstIndices.length >= indexCount) return null;
 
   return compact(geom, dstIndices);

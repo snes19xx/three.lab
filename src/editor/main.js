@@ -4,6 +4,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { payloadToFile, putHandoff, takeHandoff } from "../shared/handoff.js";
+import { initialThemeIsDark, storeTheme, watchSystemTheme } from "../shared/theme.js";
 import { compressGLB } from "./optimize.js";
 import { simplifyGeometry } from "./simplify.js";
 import { initTabs } from "./tabs.js";
@@ -107,11 +108,8 @@ const rotNums = axes.map((a) => $(`rot${a}Num`));
 const allInputs = [...posSliders, ...posNums, ...rotSliders, ...rotNums];
 
 //  INIT
-// Apply saved theme BEFORE init() builds the scene, so background reads correctly
-document.body.classList.toggle(
-  "dark",
-  localStorage.getItem("mt-theme") === "dark",
-);
+// Apply the theme BEFORE init() builds the scene, so background reads correctly
+document.body.classList.toggle("dark", initialThemeIsDark());
 
 init();
 animate();
@@ -1258,7 +1256,7 @@ function sendSelectionToLab() {
           { name: `${base}.${label}.glb`, buffer: glb },
           { wireframe: true },
         );
-        location.href = "index.html";
+        location.href = "lab.html";
       } catch (err) {
         renderHighlights();
         hideLoader();
@@ -1837,13 +1835,16 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-//  THEME (dark / light)
+//  THEME (shared with the City and Lab; OS preference unless toggled)
 //  must run BEFORE init() so scene background reads the right theme
-const THEME_KEY = "mt-theme";
-(function loadTheme() {
-  const saved = localStorage.getItem(THEME_KEY);
-  document.body.classList.toggle("dark", saved === "dark");
-})();
+document.body.classList.toggle("dark", initialThemeIsDark());
+
+// Until the user picks a side, follow the OS live.
+watchSystemTheme((dark) => {
+  document.body.classList.toggle("dark", dark);
+  applySceneTheme();
+  applyGridTheme();
+});
 
 function isDark() {
   return document.body.classList.contains("dark");
@@ -1871,7 +1872,7 @@ function applyGridTheme() {
 function toggleTheme() {
   const dark = !isDark();
   document.body.classList.toggle("dark", dark);
-  localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+  storeTheme(dark); // only an explicit toggle pins the theme
   applySceneTheme();
   applyGridTheme();
 }
@@ -1896,7 +1897,7 @@ async function openInLab() {
       try {
         const base = currentFileName.replace(/\.(glb|gltf)$/i, "") || "model";
         await putHandoff("toLab", { name: `${base}.glb`, buffer: glb });
-        location.href = "index.html";
+        location.href = "lab.html";
       } catch (err) {
         console.error(err);
         hideLoader();

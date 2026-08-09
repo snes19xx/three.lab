@@ -14,7 +14,6 @@
   --caption2: #3e4140;
 
   --serif: "Cormorant Garamond", "Source Serif 4", Georgia, serif;
-  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
   --sans: "Plus Jakarta Sans", "apple-system", "sans-serif";
 
   --panel-w: 360px;
@@ -53,8 +52,8 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--mono);
-  font-size: 13px;
+  font-family: var(--sans);
+  font-size: 15px;
   -webkit-font-smoothing: antialiased;
   transition:
     background 0.2s,
@@ -102,13 +101,13 @@ body:not(.mode-glb) .mode-glb-only {
   flex-shrink: 0;
 }
 .mode-pill {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-2);
   border: 1px solid var(--line);
-  padding: 4px 10px;
+  padding: 5px 12px;
   white-space: nowrap;
 }
 body.mode-texture .mode-pill::after {
@@ -125,7 +124,7 @@ body.mode-glb .mode-pill::after {
 }
 #subject-name {
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 400;
   font-style: italic;
   letter-spacing: 0.01em;
@@ -141,12 +140,13 @@ body.mode-glb .mode-pill::after {
 }
 
 #cursor-coords {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 13px;
   color: var(--ink-3);
-  min-width: 168px;
+  min-width: 200px;
   text-align: right;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
   transition: color 0.15s;
 }
 #cursor-coords.active {
@@ -166,12 +166,12 @@ body.mode-glb .mode-pill::after {
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 13px;
   font-weight: 400;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 8px 14px;
+  padding: 10px 16px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -183,6 +183,11 @@ body.mode-glb .mode-pill::after {
 .btn:hover:not(:disabled) {
   border-color: var(--ink);
   color: var(--ink);
+}
+/* These are also used on <a> (cross-page links) */
+a.btn,
+a.try-btn {
+  text-decoration: none;
 }
 .btn:disabled {
   opacity: 0.35;
@@ -246,7 +251,7 @@ body.dark .btn .theme-glyph {
 }
 .page-btn {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: 20px;
   font-style: italic;
   font-weight: 400;
   background: transparent;
@@ -265,8 +270,8 @@ body.dark .btn .theme-glyph {
   cursor: default;
 }
 .page-indicator {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   letter-spacing: 0.1em;
   color: var(--ink-2);
 }
@@ -314,23 +319,24 @@ body.dark .btn .theme-glyph {
 }
 .section-title {
   font-family: var(--serif);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 400;
   letter-spacing: 0.01em;
   color: var(--ink);
-  padding-bottom: 10px;
-  margin-bottom: 14px;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: baseline;
   justify-content: space-between;
 }
 .section-title .hint {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-weight: 400;
-  font-size: 10px;
+  font-size: 12px;
+  font-style: italic;
   color: var(--ink-3);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   text-transform: none;
 }
 
@@ -340,6 +346,98 @@ body.dark .btn .theme-glyph {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: var(--bg);
+}
+
+/* ---- Action dock ----
+   The footer is pinned*/
+.action-dock .dock-primary {
+  justify-content: center;
+  width: 100%;
+}
+.action-dock .dock-row {
+  display: flex;
+  gap: 6px;
+}
+
+.action-dock .dock-cell {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.action-dock .dock-cell .btn {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 8px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* Export list. */
+.action-dock {
+  position: relative;
+}
+.dock-menu-toggle .caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid currentColor;
+  transition: transform 0.15s;
+}
+.dock-menu-toggle[aria-expanded="true"] {
+  border-color: var(--ink);
+}
+.dock-menu-toggle[aria-expanded="true"] .caret {
+  transform: rotate(180deg);
+}
+.dock-menu-list {
+  position: absolute;
+  bottom: 100%;
+  left: 22px;
+  right: 22px;
+  background: var(--bg);
+  border: 1px solid var(--ink);
+  border-bottom: none;
+  display: flex;
+  flex-direction: column;
+  z-index: 120;
+}
+.dock-menu-list[hidden] {
+  display: none;
+}
+.menu-item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-align: left;
+  padding: 11px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  transition: background 0.12s;
+}
+.menu-item:last-child {
+  border-bottom: none;
+}
+.menu-item:hover {
+  background: var(--surface-2);
+}
+
+.menu-item > span {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.menu-item:hover > span {
+  color: var(--ink-2);
 }
 
 /* ============== DROP ZONE ============== */
@@ -385,8 +483,8 @@ body.dark .btn .theme-glyph {
 }
 .drop-meta {
   display: block;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: 12px;
   color: var(--ink-3);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -395,7 +493,7 @@ body.dark .btn .theme-glyph {
   display: block;
   font-family: var(--sans); /*xxx*/
   font-style: italic;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -403,16 +501,16 @@ body.dark .btn .theme-glyph {
 }
 .loaded-meta {
   display: block;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: 12px;
   color: var(--ink-3);
   letter-spacing: 0.06em;
   margin-top: 4px;
 }
 .file-input-label {
   display: block;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -423,8 +521,8 @@ body.dark .btn .theme-glyph {
 }
 
 #fileStats {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   color: var(--ink-3);
   margin-top: 12px;
   padding-top: 12px;
@@ -451,23 +549,24 @@ body.dark .btn .theme-glyph {
 /* ============== CONTROL ROWS ============== */
 .ctrl-row {
   display: grid;
-  grid-template-columns: 96px 1fr 56px;
+  grid-template-columns: 110px 1fr 64px;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .ctrl-row:last-child {
   margin-bottom: 0;
 }
 .ctrl-label {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   color: var(--ink-2);
   letter-spacing: 0.02em;
 }
 .ctrl-val {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
   color: var(--ink);
   text-align: right;
   letter-spacing: 0.02em;
@@ -522,6 +621,36 @@ input[type="range"]:hover::-webkit-slider-thumb {
   transform: scale(1.2);
 }
 
+/* ============== CHECKBOX ROWS ============== */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-2);
+  padding: 9px 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.check-row:hover {
+  color: var(--ink);
+}
+.check-row input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.check-row input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ============== TOGGLE BUTTONS ============== */
 .toggle-btn {
   appearance: none;
@@ -529,8 +658,8 @@ input[type="range"]:hover::-webkit-slider-thumb {
   background: transparent;
   color: var(--ink-2);
   font: inherit;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   font-weight: 400;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -581,8 +710,8 @@ input[type="range"]:hover::-webkit-slider-thumb {
   background: transparent;
   color: var(--ink-2);
   font: inherit;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-family: var(--sans);
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 8px 4px;
@@ -630,8 +759,8 @@ input[type="color"]::-webkit-color-swatch {
   border: none;
 }
 .color-hex {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   color: var(--ink-3);
   letter-spacing: 0.02em;
 }
@@ -724,8 +853,8 @@ input[type="color"]::-webkit-color-swatch {
   letter-spacing: 0.01em;
 }
 .empty-sub {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   color: var(--caption2);
   max-width: 380px;
   text-align: center;
@@ -740,8 +869,8 @@ input[type="color"]::-webkit-color-swatch {
   background: var(--surface);
   border: 1px solid var(--line);
   padding: 8px 12px;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-family: var(--sans);
+  font-size: 13px;
   color: var(--ink-2);
   line-height: 1.7;
   letter-spacing: 0.04em;
@@ -764,8 +893,8 @@ input[type="color"]::-webkit-color-swatch {
   position: absolute;
   bottom: 18px;
   left: 18px;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: 12px;
   color: var(--ink-3);
   line-height: 1.7;
   z-index: 2;
@@ -778,7 +907,7 @@ input[type="color"]::-webkit-color-swatch {
   border: 1px solid var(--line);
   padding: 1px 5px;
   font-family: inherit;
-  font-size: 9.5px;
+  font-size: 12px;
   color: var(--ink-2);
 }
 
@@ -824,8 +953,8 @@ input[type="color"]::-webkit-color-swatch {
   background: var(--surface-2);
 }
 .try-btn-kind {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-family: var(--sans);
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -853,8 +982,8 @@ input[type="color"]::-webkit-color-swatch {
 .toast {
   background: var(--ink);
   color: var(--bg);
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: 14px;
   letter-spacing: 0.06em;
   padding: 10px 16px;
   border: 1px solid var(--ink);
@@ -878,4 +1007,145 @@ body.dark .toast.accent {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
+}
+
+/* ============== LINE ART PANEL ============== */
+.lineart-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: color-mix(in srgb, var(--bg) 76%, transparent);
+  backdrop-filter: blur(3px);
+}
+.lineart-overlay[hidden] {
+  display: none;
+}
+
+.lineart-dialog {
+  width: min(1180px, 100%);
+  height: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+}
+
+.lineart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.lineart-title {
+  font-family: var(--serif);
+  font-size: 30px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.lineart-sub {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+.lineart-close {
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.lineart-close:hover {
+  color: var(--ink);
+}
+
+.lineart-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  min-height: 0;
+}
+
+/* The drawing itself, on paper. */
+.lineart-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+  color: var(--ink);
+}
+.lineart-svg {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lineart-svg svg {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+.lineart-placeholder {
+  position: absolute;
+  font-family: var(--sans);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink-3);
+}
+.lineart-placeholder[hidden] {
+  display: none;
+}
+
+.lineart-controls {
+  padding: 22px 22px 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.lineart-controls .section-title {
+  font-size: 22px;
+}
+
+.lineart-stats {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 2;
+}
+.lineart-stats .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lineart-stats .row span:last-child {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.lineart-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 26px;
+  border-top: 1px solid var(--line);
+}
+.lineart-exports {
+  display: flex;
+  gap: 8px;
 }
