@@ -179,6 +179,7 @@ export function loadGLB(file) {
     dracoLoader.setDecoderPath("https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/");
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
+    loader.setKTX2Loader(ktx2Loader);
 
     loader.parse(
       e.target.result,

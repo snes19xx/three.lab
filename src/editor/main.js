@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { payloadToFile, putHandoff, takeHandoff } from "../shared/handoff.js";
 import { initialThemeIsDark, storeTheme, watchSystemTheme } from "../shared/theme.js";
 import { compressGLB } from "./optimize.js";
@@ -11,7 +12,7 @@ import { initTabs } from "./tabs.js";
 
 //  STATE
 
-let scene, camera, renderer, controls;
+let scene, camera, renderer, controls, ktx2Loader;
 let currentModel = null;
 let originalArrayBuffer = null;
 let currentFileName = "";
@@ -130,6 +131,10 @@ function init() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
+
+  ktx2Loader = new KTX2Loader()
+    .setTranscoderPath("https://unpkg.com/three@0.160.0/examples/jsm/libs/basis/")
+    .detectSupport(renderer);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -506,6 +511,7 @@ function parseGLB(buffer, name, size, opts = {}) {
   );
   const loader = new GLTFLoader();
   loader.setDRACOLoader(draco); // without this, draco-compressed models hang forever at loading
+  loader.setKTX2Loader(ktx2Loader);
   loader.parse(
     buffer,
     "",
