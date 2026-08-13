@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import {
   scene, camera, controls, renderer,
   sphere, sphereGroup, sphereMat, starPoints,
@@ -180,6 +181,7 @@ export function loadGLB(file) {
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
     loader.setKTX2Loader(ktx2Loader);
+    loader.setMeshoptDecoder(MeshoptDecoder);
 
     loader.parse(
       e.target.result,
